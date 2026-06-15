@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MVC Monthly Retargeting — State Projections</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a2e; }
+
+  header { background: #1a1a2e; color: white; padding: 15px 28px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
+  header span { font-size: 11px; color: #8899bb; white-space: nowrap; }
+  #editBadge { display:none; background:#f59e0b; color:#1a1a2e; font-size:11px; font-weight:700; padding:3px 9px; border-radius:12px; white-space:nowrap; }
+
+  .tab-bar { display: flex; background: #13132a; padding: 0 28px; border-bottom: 2px solid #2563eb; }
+  .tab-btn { padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; background: transparent; color: #8899bb; border: none; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: color .15s, border-color .15s; white-space: nowrap; }
+  .tab-btn:hover { color: #cbd5e1; }
+  .tab-btn.active { color: white; border-bottom-color: #2563eb; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 28px; background: white; border-bottom: 1px solid #e5e9f0; align-items: flex-end; }
+  .ctrl-group { display: flex; flex-direction: column; gap: 4px; }
+  .ctrl-group label { font-size: 10px; font-weight: 700; color: #777; text-transform: uppercase; letter-spacing: 0.5px; }
+  select, input[type=number] { height: 30px; border: 1px solid #d0d7e3; border-radius: 6px; font-size: 12px; padding: 0 8px; background: white; color: #1a1a2e; }
+  .btn { height: 30px; border: none; border-radius: 6px; font-size: 12px; font-weight: 700; padding: 0 14px; cursor: pointer; }
+  .btn-primary { background: #2563eb; color: white; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-secondary { background: #f1f5f9; color: #334155; border: 1px solid #d0d7e3; }
+  .btn-secondary:hover { background: #e2e8f0; }
+  .btn-warn { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+  .btn-warn:hover { background: #fde68a; }
+  .btn-danger { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+  .btn-danger:hover { background: #fecaca; }
+
+  .summary-cards { display: flex; gap: 10px; padding: 14px 28px 0; flex-wrap: wrap; }
+  .card { background: white; border-radius: 10px; padding: 12px 16px; flex: 1; min-width: 115px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
+  .card .lbl { font-size: 10px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px; }
+  .card .val { font-size: 19px; font-weight: 700; color: #1a1a2e; }
+  .card .sub { font-size: 11px; color: #888; margin-top: 2px; }
+  .card.hi { background: #2563eb; }
+  .card.hi .lbl, .card.hi .val, .card.hi .sub { color: white; }
+  .card.amber { background: #fffbeb; border: 1px solid #fcd34d; }
+  .card.amber .lbl { color: #92400e; }
+  .card.amber .val { color: #78350f; }
+  .card.amber .sub { color: #b45309; }
+
+  .legend-row { display: flex; gap: 16px; padding: 10px 28px 0; flex-wrap: wrap; align-items: center; font-size: 11px; color: #555; }
+  .leg { display: flex; align-items: center; gap: 5px; }
+  .leg-box { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+
+  /* ── TABLE ── */
+  .table-wrap { margin: 12px 28px 28px; overflow-x: auto; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+  table { width: 100%; border-collapse: collapse; background: white; font-size: 13px; }
+  thead th { background: #1a1a2e; color: white; padding: 8px 10px; text-align: right; white-space: nowrap; font-weight: 600; font-size: 11px; letter-spacing: 0.4px; position: sticky; top: 0; z-index: 2; }
+  thead th:first-child { text-align: left; }
+  thead th.state-hd { background: #1e3a5f; }
+  tbody tr:nth-child(even):not(.section-sep):not(.projected) { background: #f8fafc; }
+  tbody tr:hover:not(.section-sep) { background: #eef2fb; }
+  tbody td { padding: 0; text-align: right; white-space: nowrap; border-bottom: 1px solid #f0f2f5; font-size: 13px; }
+  tbody td:first-child { text-align: left; font-weight: 600; color: #334155; padding: 7px 10px; }
+
+  /* cell inner wrapper */
+  .cell-inner { display: flex; align-items: center; justify-content: flex-end; padding: 7px 10px; min-width: 64px; }
+  td:first-child .cell-inner { justify-content: flex-start; }
+
+  /* editable cells */
+  td.editable .cell-inner { cursor: pointer; border-radius: 5px; transition: background .12s; position: relative; }
+  td.editable .cell-inner:hover { background: #dbeafe; }
+  td.editable .cell-inner:hover::after { content: '✏'; font-size: 9px; margin-left: 4px; color: #2563eb; opacity: 0.7; }
+
+  /* overridden cells */
+  /* Overridden actual cell — soft amber */
+  td.overridden .cell-inner { background: #fef9c3; border-left: 3px solid #f59e0b; padding-left: 7px; border-radius: 4px; }
+  /* Overridden projected cell (changed but not finalized) — distinct coral/orange */
+  td.overridden.proj-cell .cell-inner { background: #fff0e6; border-left: 3px solid #f97316; padding-left: 7px; border-radius: 4px; color: #c2410c; font-weight: 600; }
+  td.overridden.proj-cell .cell-inner::after { content: ' ✎'; font-size: 9px; color: #f97316; opacity: 0.8; }
+
+  /* inline editor input */
+  .cell-input { width: 90px; height: 26px; border: 2px solid #2563eb; border-radius: 5px; font-size: 13px; font-weight: 600; text-align: right; padding: 0 6px; background: white; color: #1a1a2e; outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,0.15); }
+
+  .projected { background: #fffbeb !important; }
+  .projected td:first-child { color: #b45309; }
+  .finalized { background: #f0fdf4 !important; }
+  .finalized td:first-child { color: #166534; }
+  .btn-finalize { height: 22px; font-size: 10px; font-weight: 700; padding: 0 8px; border-radius: 4px; border: 1px solid #86efac; background: #dcfce7; color: #166534; cursor: pointer; white-space: nowrap; margin-left: 6px; }
+  .btn-finalize:hover { background: #bbf7d0; }
+  .btn-unfinalize { height: 22px; font-size: 10px; font-weight: 700; padding: 0 8px; border-radius: 4px; border: 1px solid #fca5a5; background: #fee2e2; color: #991b1b; cursor: pointer; white-space: nowrap; margin-left: 6px; }
+  .btn-unfinalize:hover { background: #fecaca; }
+  .pos { color: #16a34a; font-weight: 600; }
+  .neg { color: #dc2626; font-weight: 600; }
+  .neutral { color: #1a1a2e; font-weight: 600; }
+  .zero { color: #aaa; }
+  .total-col { background: #f0f4ff !important; font-weight: 700; }
+  .var-col { background: #fafbff !important; font-size: 12px; }
+  .roll-col { background: #f0fff4 !important; font-size: 12px; }
+  .section-sep { background: #1a1a2e !important; }
+  .section-sep td { color: #8899bb !important; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; padding: 4px 10px !important; text-align: left !important; }
+  tfoot td { background: #1a1a2e !important; color: white !important; padding: 8px 10px; text-align: right; font-weight: 700; font-size: 13px; border: none; }
+  tfoot td:first-child { text-align: left; }
+
+  .state-tabs { display: flex; gap: 6px; padding: 14px 28px 0; flex-wrap: wrap; }
+  .state-tab-btn { padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: 700; cursor: pointer; border: 2px solid #d0d7e3; background: white; color: #555; transition: all .15s; }
+  .state-tab-btn:hover { border-color: #2563eb; color: #2563eb; }
+  .state-tab-btn.active { background: #2563eb; color: white; border-color: #2563eb; }
+
+  /* toast */
+  #toast { position: fixed; bottom: 24px; right: 28px; background: #1a1a2e; color: white; padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 999; }
+  #toast.show { opacity: 1; }
+
+  .hidden { display: none; }
+  .edit-hint { font-size: 11px; color: #888; padding: 6px 28px 0; font-style: italic; }
+
+  /* ── UPLOAD MODAL ── */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 100; display: flex; align-items: center; justify-content: center; }
+  .modal { background: white; border-radius: 14px; width: 640px; max-width: 95vw; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.3); overflow: hidden; }
+  .modal-header { padding: 20px 24px 16px; border-bottom: 1px solid #e5e9f0; }
+  .modal-header h2 { font-size: 16px; font-weight: 700; color: #1a1a2e; margin-bottom: 4px; }
+  .modal-header p { font-size: 12px; color: #888; }
+  .modal-body { padding: 16px 24px; overflow-y: auto; flex: 1; }
+  .modal-footer { padding: 14px 24px; border-top: 1px solid #e5e9f0; display: flex; align-items: center; gap: 10px; justify-content: flex-end; }
+  .modal-footer label { font-size: 12px; color: #555; display: flex; align-items: center; gap: 6px; margin-right: auto; cursor: pointer; }
+  .preview-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  .preview-table th { background: #1a1a2e; color: white; padding: 7px 10px; text-align: right; font-weight: 600; }
+  .preview-table th:first-child { text-align: left; }
+  .preview-table td { padding: 6px 10px; text-align: right; border-bottom: 1px solid #f0f2f5; }
+  .preview-table td:first-child { text-align: left; font-weight: 600; }
+  .row-new td { background: #f0fdf4; color: #166534; }
+  .row-new td:first-child::after { content: ' NEW'; font-size: 9px; font-weight: 700; background: #16a34a; color: white; padding: 1px 5px; border-radius: 4px; margin-left: 5px; }
+  .row-update td { background: #fffbeb; color: #78350f; }
+  .row-update td:first-child::after { content: ' UPDATE'; font-size: 9px; font-weight: 700; background: #f59e0b; color: white; padding: 1px 5px; border-radius: 4px; margin-left: 5px; }
+  .upload-drop { display: block; border: 2px dashed #d0d7e3; border-radius: 10px; padding: 32px; text-align: center; cursor: pointer; transition: all .15s; margin-bottom: 8px; }
+  .upload-drop:hover, .upload-drop.dragover { border-color: #2563eb; background: #eff6ff; }
+  .upload-drop p { font-size: 13px; color: #555; margin-top: 8px; }
+  .upload-drop .upload-icon { font-size: 32px; }
+  .upload-stats { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .stat-pill { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+  .stat-new { background: #dcfce7; color: #166534; }
+  .stat-update { background: #fef3c7; color: #92400e; }
+  .stat-skip { background: #f1f5f9; color: #334155; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Metro Vein Centers — Monthly Retargeting · State Reach Analysis</h1>
+  <span id="editBadge">✏ <span id="editCount">0</span> edits</span>
+  <span>Source: mailed_by_state (59) · Sep 2022 – Apr 2026 · <span style="opacity:0.7;font-size:10px">v2.5</span></span>
+</header>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('monthly')">📊 Monthly by State</button>
+  <button class="tab-btn" onclick="switchTab('breakdown')">📋 State Breakdown</button>
+  <button class="tab-btn" onclick="switchTab('totals')">🏆 All-Time Totals</button>
+</div>
+
+<div class="controls" id="ctrlBar">
+  <div class="ctrl-group" id="ctrl-variance">
+    <label>Variance</label>
+    <select id="varianceType" onchange="render()">
+      <option value="pct">% MoM Change</option>
+      <option value="abs">Absolute MoM Change</option>
+      <option value="hide">Hide Variance</option>
+    </select>
+  </div>
+  <div class="ctrl-group" id="ctrl-rolling">
+    <label>1-Mo Rolling Δ</label>
+    <select id="rollingVar" onchange="render()">
+      <option value="show">Show</option>
+      <option value="hide">Hide</option>
+    </select>
+  </div>
+  <div class="ctrl-group" id="ctrl-project-n">
+    <label>Project Ahead (mo)</label>
+    <input type="number" id="projectMonths" value="3" min="1" max="12" style="width:68px" onchange="render()">
+  </div>
+  <div class="ctrl-group" id="ctrl-project-m">
+    <label>Projection Method</label>
+    <select id="projMethod" onchange="render()">
+      <option value="avg3">3-Month Rolling Avg</option>
+      <option value="avg1">1-Month Rolling Avg</option>
+      <option value="avg6">6-Month Rolling Avg</option>
+      <option value="trend">Linear Trend (12-Mo)</option>
+      <option value="yoy">Same Month Prior Year</option>
+      <option value="seasonal">Seasonal (Trend + Seasonality)</option>
+    </select>
+  </div>
+  <div class="ctrl-group" id="ctrl-states">
+    <label>States (Ctrl/Cmd = multi)</label>
+    <select id="stateFilter" multiple style="height:30px;min-width:170px;" onchange="render()">
+      <option value="CT" selected>CT</option>
+      <option value="MI" selected>MI</option>
+      <option value="NJ" selected>NJ</option>
+      <option value="NY" selected>NY</option>
+      <option value="TX" selected>TX</option>
+      <option value="AZ" selected>AZ</option>
+      <option value="PA" selected>PA</option>
+    </select>
+  </div>
+  <button class="btn btn-primary" onclick="selectAllStates()">All States</button>
+  <button class="btn btn-secondary" onclick="exportCSV()">Export CSV</button>
+  <button class="btn btn-primary" onclick="openUploadModal()" style="background:#059669">📥 Upload Actuals</button>
+  <button class="btn btn-warn hidden" id="btnResetAll" onclick="resetAll()">↺ Reset All Edits</button>
+</div>
+
+<!-- ── UPLOAD MODAL ── -->
+<div class="modal-overlay hidden" id="uploadModal" onclick="if(event.target===this)closeUploadModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>📥 Upload Monthly Actuals</h2>
+      <p>Accepts the same format as <strong>mailed_by_state</strong> — columns: Campaign, Mailed, CT, MI, NJ, NY, TX, AZ, PA. Rows are aggregated by month automatically.</p>
+    </div>
+    <div class="modal-body" id="uploadModalBody">
+      <!-- File input lives inside the label so clicking anywhere on the drop zone triggers it natively -->
+      <label class="upload-drop" id="uploadDrop"
+             ondragover="event.preventDefault();this.classList.add('dragover')"
+             ondragleave="this.classList.remove('dragover')"
+             ondrop="event.preventDefault();this.classList.remove('dragover');handleFileDrop(event)">
+        <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleFileSelect(event)">
+        <div class="upload-icon">📂</div>
+        <p><strong>Click to browse</strong> or drag & drop your file here</p>
+        <p style="font-size:11px;color:#aaa;margin-top:4px">Supports .csv and .xlsx / .xls</p>
+      </label>
+      <div id="uploadError" style="display:none;background:#fee2e2;border:1px solid #f87171;border-radius:6px;padding:10px 14px;color:#b91c1c;font-size:13px;margin-top:10px"></div>
+      <div id="uploadPreview" style="display:none">
+        <div class="upload-stats" id="uploadStats"></div>
+        <table class="preview-table">
+          <thead><tr id="previewHead"></tr></thead>
+          <tbody id="previewBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <label><input type="checkbox" id="chkOverwrite" checked> Overwrite existing months with uploaded values</label>
+      <button class="btn btn-secondary" id="btnCancelUpload" onclick="closeUploadModal()">Cancel</button>
+      <button class="btn btn-primary" id="btnConfirmUpload" style="display:none" onclick="confirmUpload()">✓ Import Data</button>
+    </div>
+  </div>
+</div>
+
+<div class="summary-cards" id="summaryCards"></div>
+
+<div class="legend-row" id="legendRow">
+  <div class="leg"><div class="leg-box" style="background:#fffbeb;border:1px solid #fbbf24"></div> Projected</div>
+  <div class="leg"><div class="leg-box" style="background:#f0fdf4;border:1px solid #86efac"></div> Finalized Actual</div>
+  <div class="leg"><div class="leg-box" style="background:#fef9c3;border-left:3px solid #f59e0b"></div> Edited actual</div>
+  <div class="leg"><div class="leg-box" style="background:#fff0e6;border-left:3px solid #f97316"></div> ✎ Edited projection (not finalized)</div>
+  <div class="leg"><div class="leg-box" style="background:#fafbff;border:1px solid #c7d2fe"></div> MoM Variance</div>
+  <div class="leg"><div class="leg-box" style="background:#f0fff4;border:1px solid #86efac"></div> 1-Mo Rolling Δ</div>
+  <div class="leg"><span class="pos">▲</span>&nbsp;Up &nbsp;<span class="neg">▼</span>&nbsp;Down</div>
+</div>
+<p class="edit-hint" id="editHint">💡 Click any value cell to edit · Enter or Tab to save · Shift + Delete to cancel · All methods use 12-month lookback · Finalized months extend the projection window automatically</p>
+
+<div class="state-tabs hidden" id="stateTabBar">
+  <button class="state-tab-btn active" onclick="selectStateBreakdown('CT')">CT</button>
+  <button class="state-tab-btn" onclick="selectStateBreakdown('MI')">MI</button>
+  <button class="state-tab-btn" onclick="selectStateBreakdown('NJ')">NJ</button>
+  <button class="state-tab-btn" onclick="selectStateBreakdown('NY')">NY</button>
+  <button class="state-tab-btn" onclick="selectStateBreakdown('TX')">TX</button>
+  <button class="state-tab-btn" onclick="selectStateBreakdown('AZ')">AZ</button>
+  <button class="state-tab-btn" onclick="selectStateBreakdown('PA')">PA</button>
+</div>
+
+<div class="table-wrap">
+  <table id="mainTable">
+    <thead id="tableHead"></thead>
+    <tbody id="tableBody"></tbody>
+    <tfoot id="tableFoot"></tfoot>
+  </table>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* global state — var avoids temporal dead zone issues */
+var pendingUpload = null;
+
+/* ════════════════════════════════════════
+   DATA
+════════════════════════════════════════ */
+const RAW = {"2022-09":{"CT":0,"MI":2114,"NJ":3894,"NY":3664,"TX":0,"AZ":0,"PA":0},"2022-10":{"CT":0,"MI":3539,"NJ":6685,"NY":8214,"TX":0,"AZ":0,"PA":0},"2022-11":{"CT":0,"MI":4892,"NJ":8315,"NY":10980,"TX":0,"AZ":0,"PA":0},"2022-12":{"CT":52,"MI":4041,"NJ":6771,"NY":9114,"TX":0,"AZ":0,"PA":0},"2023-01":{"CT":254,"MI":1001,"NJ":1722,"NY":2654,"TX":0,"AZ":0,"PA":0},"2023-02":{"CT":3424,"MI":8907,"NJ":15875,"NY":22233,"TX":0,"AZ":0,"PA":0},"2023-03":{"CT":8642,"MI":14083,"NJ":25314,"NY":37069,"TX":0,"AZ":0,"PA":0},"2023-04":{"CT":3001,"MI":3334,"NJ":5516,"NY":8887,"TX":0,"AZ":0,"PA":0},"2023-05":{"CT":3507,"MI":4312,"NJ":7381,"NY":9570,"TX":0,"AZ":0,"PA":0},"2023-06":{"CT":4636,"MI":6444,"NJ":9278,"NY":4386,"TX":730,"AZ":0,"PA":0},"2023-07":{"CT":2080,"MI":3283,"NJ":5906,"NY":2966,"TX":1001,"AZ":0,"PA":0},"2023-08":{"CT":2449,"MI":4424,"NJ":7336,"NY":3816,"TX":2949,"AZ":0,"PA":0},"2023-09":{"CT":2679,"MI":4683,"NJ":8203,"NY":4225,"TX":2878,"AZ":0,"PA":0},"2023-10":{"CT":2912,"MI":4960,"NJ":10339,"NY":5476,"TX":4260,"AZ":0,"PA":0},"2023-11":{"CT":1507,"MI":2752,"NJ":6873,"NY":2686,"TX":2921,"AZ":0,"PA":0},"2023-12":{"CT":1320,"MI":2503,"NJ":5898,"NY":2656,"TX":2856,"AZ":547,"PA":0},"2024-01":{"CT":2318,"MI":5070,"NJ":11215,"NY":12734,"TX":7200,"AZ":1072,"PA":0},"2024-02":{"CT":2372,"MI":4845,"NJ":10000,"NY":15786,"TX":10164,"AZ":961,"PA":0},"2024-03":{"CT":2523,"MI":5636,"NJ":11601,"NY":16933,"TX":10920,"AZ":1034,"PA":0},"2024-04":{"CT":4262,"MI":6969,"NJ":18595,"NY":25272,"TX":13129,"AZ":1489,"PA":0},"2024-05":{"CT":3071,"MI":6064,"NJ":13978,"NY":18724,"TX":9148,"AZ":1154,"PA":0},"2024-06":{"CT":2573,"MI":5503,"NJ":11830,"NY":15537,"TX":9039,"AZ":1360,"PA":1450},"2024-07":{"CT":2572,"MI":4678,"NJ":11432,"NY":14572,"TX":7311,"AZ":1968,"PA":1451},"2024-08":{"CT":3634,"MI":5913,"NJ":14236,"NY":23007,"TX":12118,"AZ":3418,"PA":2067},"2024-09":{"CT":2955,"MI":5472,"NJ":11533,"NY":18751,"TX":10626,"AZ":2912,"PA":1475},"2024-10":{"CT":3421,"MI":5891,"NJ":12456,"NY":20038,"TX":11545,"AZ":2769,"PA":1351},"2024-11":{"CT":2647,"MI":4682,"NJ":10340,"NY":15210,"TX":9803,"AZ":2174,"PA":1312},"2024-12":{"CT":2664,"MI":5167,"NJ":9563,"NY":16945,"TX":12741,"AZ":3388,"PA":1474},"2025-01":{"CT":2968,"MI":6277,"NJ":10634,"NY":20231,"TX":12385,"AZ":4783,"PA":893},"2025-02":{"CT":5436,"MI":11867,"NJ":19479,"NY":27566,"TX":18611,"AZ":6638,"PA":1506},"2025-03":{"CT":3122,"MI":6414,"NJ":11222,"NY":18767,"TX":11518,"AZ":4535,"PA":812},"2025-04":{"CT":370,"MI":730,"NJ":1217,"NY":2438,"TX":1575,"AZ":536,"PA":99},"2025-05":{"CT":4062,"MI":8142,"NJ":14394,"NY":0,"TX":15409,"AZ":6526,"PA":0},"2025-06":{"CT":4793,"MI":9305,"NJ":15340,"NY":0,"TX":13030,"AZ":7872,"PA":0},"2025-07":{"CT":7242,"MI":12304,"NJ":22158,"NY":0,"TX":17198,"AZ":12499,"PA":0},"2025-08":{"CT":7028,"MI":9043,"NJ":23524,"NY":0,"TX":17294,"AZ":13515,"PA":0},"2025-09":{"CT":3749,"MI":6449,"NJ":11903,"NY":0,"TX":12747,"AZ":6851,"PA":0},"2025-10":{"CT":3255,"MI":5228,"NJ":9712,"NY":0,"TX":11258,"AZ":3996,"PA":0},"2025-11":{"CT":3481,"MI":7016,"NJ":10171,"NY":0,"TX":12517,"AZ":5522,"PA":0},"2025-12":{"CT":4114,"MI":7562,"NJ":465,"NY":1089,"TX":15171,"AZ":5735,"PA":0},"2026-01":{"CT":5063,"MI":8792,"NJ":0,"NY":1620,"TX":19171,"AZ":6921,"PA":0},"2026-02":{"CT":4942,"MI":9237,"NJ":11831,"NY":1873,"TX":20688,"AZ":5812,"PA":0},"2026-03":{"CT":3967,"MI":7371,"NJ":9389,"NY":1487,"TX":18258,"AZ":5744,"PA":0},"2026-04":{"CT":5524,"MI":8631,"NJ":13711,"NY":6560,"TX":25197,"AZ":7767,"PA":410}};
+
+const ALL_STATES = ['CT','MI','NJ','NY','TX','AZ','PA'];
+const MONTHS = Object.keys(RAW).sort();
+
+/* ── Persistent stores (survive page refresh via localStorage) ── */
+const LS_OVERRIDES = 'mvc_overrides';
+const LS_FINALIZED = 'mvc_finalized';
+const LS_UPLOADED  = 'mvc_uploaded';
+
+let OVERRIDES = JSON.parse(localStorage.getItem(LS_OVERRIDES) || '{}');
+let FINALIZED  = JSON.parse(localStorage.getItem(LS_FINALIZED) || '{}');
+let UPLOADED   = JSON.parse(localStorage.getItem(LS_UPLOADED)  || '{}');  // months beyond RAW
+
+function isFinalized(m) { return !!FINALIZED[m]; }
+
+function finalizeMonth(m, projRaw) {
+  FINALIZED[m] = {};
+  ALL_STATES.forEach(s => {
+    FINALIZED[m][s] = (OVERRIDES[m] && OVERRIDES[m][s] !== undefined)
+      ? OVERRIDES[m][s]
+      : (projRaw[s] !== undefined ? projRaw[s] : 0);
+  });
+  localStorage.setItem(LS_FINALIZED, JSON.stringify(FINALIZED));
+  toast(`✓ ${m} finalized as actual.`);
+  render();
+}
+
+function unfinalizeMonth(m) {
+  delete FINALIZED[m];
+  localStorage.setItem(LS_FINALIZED, JSON.stringify(FINALIZED));
+  toast(`↺ ${m} reverted to projected.`);
+  render();
+}
+
+function countFinalized() { return Object.keys(FINALIZED).length; }
+
+function getData(m, s) {
+  if (FINALIZED[m] && FINALIZED[m][s] !== undefined) return FINALIZED[m][s];
+  if (OVERRIDES[m] && OVERRIDES[m][s] !== undefined) return OVERRIDES[m][s];
+  if (RAW[m]      && RAW[m][s]      !== undefined) return RAW[m][s];
+  if (UPLOADED[m] && UPLOADED[m][s] !== undefined) return UPLOADED[m][s];
+  return 0;
+}
+
+/* All months available as actuals (RAW + uploaded), sorted */
+function getAllActualMonths() {
+  return [...new Set([...Object.keys(RAW), ...Object.keys(UPLOADED)])].sort();
+}
+function setData(m, s, val) {
+  if (!OVERRIDES[m]) OVERRIDES[m] = {};
+  OVERRIDES[m][s] = Math.max(0, Math.round(val));
+  localStorage.setItem(LS_OVERRIDES, JSON.stringify(OVERRIDES));
+  updateEditBadge();
+}
+function isOverridden(m, s) { return OVERRIDES[m] && OVERRIDES[m][s] !== undefined; }
+function countOverrides() { return Object.values(OVERRIDES).reduce((a,o)=>a+Object.keys(o).length,0); }
+function updateEditBadge() {
+  const e = countOverrides(), f = countFinalized();
+  const parts = [];
+  if (e > 0) parts.push(`✏ ${e} edit${e>1?'s':''}`);
+  if (f > 0) parts.push(`✓ ${f} finalized`);
+  const badge = document.getElementById('editBadge');
+  badge.textContent = parts.join(' · ');
+  badge.style.display = parts.length > 0 ? 'inline-block' : 'none';
+  document.getElementById('btnResetAll').classList.toggle('hidden', e === 0 && f === 0);
+}
+function resetAll() {
+  const total = countOverrides() + countFinalized();
+  if (!confirm(`Reset all ${total} edits and finalizations? This restores original data.`)) return;
+  OVERRIDES = {};
+  FINALIZED = {};
+  UPLOADED  = {};
+  localStorage.removeItem(LS_OVERRIDES);
+  localStorage.removeItem(LS_FINALIZED);
+  localStorage.removeItem(LS_UPLOADED);
+  updateEditBadge();
+  render();
+  toast('All edits and finalizations reset.');
+}
+
+/* ── State ── */
+let currentTab = 'monthly';
+let currentStateBreakdown = 'CT';
+
+/* ── Toast ── */
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+/* ── Tab switching ── */
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', i === ['monthly','breakdown','totals'].indexOf(tab)));
+  document.getElementById('stateTabBar').classList.toggle('hidden', tab !== 'breakdown');
+  document.getElementById('editHint').classList.toggle('hidden', tab === 'totals');
+  const allCtrls = ['ctrl-project-n','ctrl-project-m','ctrl-variance','ctrl-rolling','ctrl-states'];
+  allCtrls.forEach(id => {
+    const el = document.getElementById(id);
+    if (tab === 'totals') el.style.display = 'none';
+    else if (tab === 'breakdown') el.style.display = ['ctrl-variance','ctrl-rolling'].includes(id) ? 'flex' : 'none';
+    else el.style.display = 'flex';
+  });
+  render();
+}
+
+function selectStateBreakdown(s) {
+  currentStateBreakdown = s;
+  document.querySelectorAll('.state-tab-btn').forEach(b => b.classList.toggle('active', b.textContent === s));
+  render();
+}
+
+/* ── Helpers ── */
+function getSelectedStates() {
+  return Array.from(document.getElementById('stateFilter').selectedOptions).map(o => o.value);
+}
+function selectAllStates() {
+  Array.from(document.getElementById('stateFilter').options).forEach(o => o.selected = true);
+  render();
+}
+function fmt(n) { return Math.round(n).toLocaleString(); }
+function fmtPct(n) {
+  if (!isFinite(n)||isNaN(n)) return '<span class="zero">—</span>';
+  const cls = n>10?'pos':n<-10?'neg':'neutral';
+  const arr = n>0?'▲':n<0?'▼':'';
+  return `<span class="${cls}">${arr} ${n>0?'+':''}${n.toFixed(1)}%</span>`;
+}
+function fmtAbs(n) {
+  if (!isFinite(n)||isNaN(n)) return '<span class="zero">—</span>';
+  const cls = n>0?'pos':n<0?'neg':'zero';
+  const arr = n>0?'▲':n<0?'▼':'';
+  return `<span class="${cls}">${arr} ${n>0?'+':''}${fmt(n)}</span>`;
+}
+function variance(cur,prev,type) {
+  if(!prev&&!cur) return '<span class="zero">—</span>';
+  if(type==='pct'){const p=prev===0?(cur>0?Infinity:0):((cur-prev)/prev*100);return fmtPct(p);}
+  return fmtAbs(cur-prev);
+}
+function addMonths(ym,n) {
+  let [y,m]=ym.split('-').map(Number); m+=n; while(m>12){m-=12;y++;}
+  return `${y}-${String(m).padStart(2,'0')}`;
+}
+
+/* ── Inline cell editor ── */
+function makeEditable(td, month, state, currentVal, isProj) {
+  td.classList.add('editable');
+  if (isOverridden(month, state)) td.classList.add('overridden');
+  if (isProj) td.classList.add('proj-cell');
+  td.querySelector('.cell-inner').addEventListener('click', function(e) {
+    if (td.querySelector('.cell-input')) return; // already editing
+    const inner = td.querySelector('.cell-inner');
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'cell-input';
+    input.value = getData(month, state);
+    input.min = 0;
+    inner.innerHTML = '';
+    inner.appendChild(input);
+    input.focus();
+    input.select();
+
+    function commit() {
+      const newVal = parseInt(input.value);
+      if (!isNaN(newVal) && newVal >= 0) {
+        setData(month, state, newVal);
+        toast(`${state} ${month}: saved ${fmt(newVal)}`);
+        render();
+      } else {
+        render(); // discard
+      }
+    }
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); commit(); }
+      if (e.key === 'Delete' && e.shiftKey) { e.preventDefault(); render(); }
+    });
+    input.addEventListener('blur', commit);
+    e.stopPropagation();
+  });
+}
+
+/* ── Effective historical months (RAW + uploaded + finalized, sorted) ── */
+function getEffectiveHistorical() {
+  const finMonths = Object.keys(FINALIZED).sort();
+  return [...new Set([...getAllActualMonths(), ...finMonths])].sort();
+}
+
+/* ── Seasonal index: for each calendar month, ratio vs overall avg (12-mo window) ── */
+function buildSeasonalIndex(state, histMonths) {
+  const window = histMonths.slice(-12);
+  const byCalMonth = {};
+  for (let c = 1; c <= 12; c++) byCalMonth[c] = [];
+  window.forEach(m => {
+    const c = parseInt(m.split('-')[1]);
+    byCalMonth[c].push(getData(m, state));
+  });
+  const calAvgs = {};
+  let totalSum = 0, count = 0;
+  for (let c = 1; c <= 12; c++) {
+    if (byCalMonth[c].length) {
+      calAvgs[c] = byCalMonth[c].reduce((a,b)=>a+b,0) / byCalMonth[c].length;
+      totalSum += calAvgs[c]; count++;
+    } else { calAvgs[c] = null; }
+  }
+  const overallAvg = count ? totalSum / count : 1;
+  const idx = {};
+  for (let c = 1; c <= 12; c++) {
+    idx[c] = calAvgs[c] !== null ? calAvgs[c] / (overallAvg || 1) : 1;
+  }
+  return idx;
+}
+
+/* ── Projection engine ── */
+/* All methods use a 12-month lookback window. Finalized months count as history. */
+function getProjected(state, lastMonth, method, nMonths) {
+  const histMonths = getEffectiveHistorical();
+  // 12-month rolling window as the baseline data series
+  const window12 = histMonths.slice(-12);
+  const vals = window12.map(m => getData(m, state));
+
+  // Pre-build seasonal index once for the whole projection run
+  const seasonalIdx = (method === 'seasonal') ? buildSeasonalIndex(state, histMonths) : null;
+
+  const results = [];
+  for (let i = 0; i < nMonths; i++) {
+    const targetMonth = addMonths(lastMonth, i+1);
+    let val = 0;
+
+    // User override always wins
+    if (isOverridden(targetMonth, state)) {
+      val = OVERRIDES[targetMonth][state];
+    } else if (method === 'avg1') {
+      val = vals[vals.length-1];
+    } else if (method === 'avg3') {
+      const r = vals.slice(-3); val = r.reduce((a,b)=>a+b,0) / r.length;
+    } else if (method === 'avg6') {
+      const r = vals.slice(-6); val = r.reduce((a,b)=>a+b,0) / r.length;
+    } else if (method === 'trend') {
+      // Linear trend over 12-month window
+      const sl = vals.slice(-12);
+      const n = sl.length;
+      const xM = (n-1)/2, yM = sl.reduce((a,b)=>a+b,0)/n;
+      let num=0, den=0;
+      sl.forEach((y,x) => { num+=(x-xM)*(y-yM); den+=(x-xM)**2; });
+      val = yM + (den ? num/den : 0) * (n/2 + i);
+    } else if (method === 'yoy') {
+      const [ty,tm] = targetMonth.split('-').map(Number);
+      const sly = `${ty-1}-${String(tm).padStart(2,'0')}`;
+      val = getData(sly, state) || vals[vals.length-1];
+    } else if (method === 'seasonal') {
+      // Layer 1: 3-month rolling avg as deseasonalized base trend
+      const base = vals.slice(-3).reduce((a,b)=>a+b,0) / Math.min(3, vals.length);
+      // Layer 2: seasonal index for the target calendar month
+      const calMonth = parseInt(targetMonth.split('-')[1]);
+      const sIdx = seasonalIdx[calMonth] ?? 1;
+      // Layer 3: normalize by the average seasonal index of the last 3 source months
+      // so the base isn't double-counted with its own seasonality
+      const srcMonths = window12.slice(-3);
+      const srcAvgIdx = srcMonths.reduce((a,m) => a + (seasonalIdx[parseInt(m.split('-')[1])] ?? 1), 0) / srcMonths.length;
+      val = base * (sIdx / (srcAvgIdx || 1));
+    }
+
+    val = Math.max(0, Math.round(val));
+    vals.push(val);
+    results.push({ month: targetMonth, value: val });
+  }
+  return results;
+}
+
+/* ── Main render ── */
+function render() {
+  if (currentTab==='monthly') renderMonthly();
+  else if (currentTab==='breakdown') renderBreakdown();
+  else renderTotals();
+}
+
+/* ═══════════════════════════════════════
+   TAB 1 — MONTHLY BY STATE
+═══════════════════════════════════════ */
+function renderMonthly() {
+  const states = getSelectedStates();
+  if (!states.length) { document.getElementById('tableBody').innerHTML = '<tr><td colspan="20" style="padding:20px;text-align:center;color:#888">Select at least one state above.</td></tr>'; return; }
+  const varType = document.getElementById('varianceType').value;
+  const showRoll = document.getElementById('rollingVar').value === 'show';
+  const projectN = parseInt(document.getElementById('projectMonths').value)||3;
+  const projMethod = document.getElementById('projMethod').value;
+
+  // Effective last actual = last actual month (RAW + uploaded) OR last finalized, whichever is later
+  const allActual = getAllActualMonths();
+  const finMonths = Object.keys(FINALIZED).sort();
+  const effectiveLastMonth = finMonths.length > 0
+    ? finMonths[finMonths.length-1]
+    : allActual[allActual.length-1];
+
+  // Base months = all actuals + finalized (merged & sorted, no duplicates)
+  const baseMonths = [...new Set([...allActual, ...finMonths])].sort();
+
+  // Project exactly projectN months beyond the effective last actual
+  const projByState = {};
+  states.forEach(s => { projByState[s] = getProjected(s, effectiveLastMonth, projMethod, projectN); });
+  const projMonths = projByState[states[0]].map(r => r.month);
+  const allMonths = [...baseMonths, ...projMonths];
+
+  const projRaw = {};
+  projMonths.forEach((m,i) => {
+    projRaw[m] = {};
+    states.forEach(s => { projRaw[m][s] = projByState[s][i].value; });
+  });
+
+  function getVal(m, s) {
+    if (isFinalized(m)) return getData(m, s);        // finalized: use FINALIZED store
+    if (projRaw[m]) return isOverridden(m,s) ? OVERRIDES[m][s] : (projRaw[m][s] ?? 0);
+    return getData(m, s);                             // actuals: RAW + OVERRIDES
+  }
+  function getTotal(m) { return states.reduce((a,s)=>a+getVal(m,s),0); }
+
+  const showVar = varType !== 'hide';
+  const stCols = 1 + (showVar?1:0) + (showRoll?1:0);
+  const totCols = 1 + (showVar?1:0) + (showRoll?1:0);
+
+  // Header
+  let hRow = '<tr><th>Month</th>';
+  states.forEach(s => {
+    hRow += `<th class="state-hd">${s}</th>`;
+    if (showVar) hRow += `<th class="state-hd" style="font-size:10px;opacity:.8">MoM</th>`;
+    if (showRoll) hRow += `<th class="state-hd" style="font-size:10px;opacity:.8">1Mo Δ</th>`;
+  });
+  hRow += `<th class="total-col">Total</th>`;
+  if (showVar) hRow += `<th class="total-col" style="font-size:10px">MoM</th>`;
+  if (showRoll) hRow += `<th class="total-col" style="font-size:10px">1Mo Δ</th>`;
+  hRow += '</tr>';
+  document.getElementById('tableHead').innerHTML = hRow;
+
+  // Body
+  const byYear = {};
+  allMonths.forEach(m => { const y=m.split('-')[0]; if(!byYear[y])byYear[y]=[]; byYear[y].push(m); });
+  const colspan = 1 + states.length*stCols + totCols;
+  const grandTotal = {}; states.forEach(s=>grandTotal[s]=0); grandTotal.Total=0;
+
+  // Build rows as DOM for editable cells
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+
+  Object.keys(byYear).sort().forEach(year => {
+    const sepRow = tbody.insertRow();
+    sepRow.className = 'section-sep';
+    const sepCell = sepRow.insertCell();
+    sepCell.colSpan = colspan;
+    sepCell.textContent = year;
+
+    byYear[year].forEach(m => {
+      const isFin  = isFinalized(m);
+      const isProj = !!projRaw[m] && !isFin;
+      const prevM = allMonths[allMonths.indexOf(m)-1];
+      const tr = tbody.insertRow();
+      if (isProj) tr.className = 'projected';
+      if (isFin)  tr.className = 'finalized';
+
+      // Month label + action button
+      const tdMonth = tr.insertCell();
+      if (isProj) {
+        const snapVals = {};
+        ALL_STATES.forEach(s => { snapVals[s] = getVal(m, s); });
+        tdMonth.innerHTML = `<div class="cell-inner">★ ${m}<button class="btn-finalize">✓ Finalize</button></div>`;
+        tdMonth.querySelector('.btn-finalize').addEventListener('click', () => finalizeMonth(m, snapVals));
+      } else if (isFin) {
+        tdMonth.innerHTML = `<div class="cell-inner">✓ ${m}<button class="btn-unfinalize">↺ Revert</button></div>`;
+        tdMonth.querySelector('.btn-unfinalize').addEventListener('click', () => unfinalizeMonth(m));
+      } else {
+        tdMonth.innerHTML = `<div class="cell-inner">${m}</div>`;
+      }
+
+      states.forEach(s => {
+        const v = getVal(m,s);
+        const pv = prevM ? getVal(prevM,s) : null;
+        if (!isProj) { grandTotal[s]+=v; grandTotal.Total+=v; }
+
+        // Value cell — editable (actuals, finalized, and projected)
+        const td = tr.insertCell();
+        td.innerHTML = `<div class="cell-inner">${fmt(v)}</div>`;
+        makeEditable(td, m, s, v, isProj && !isFin);
+
+        if (showVar) {
+          const vTd = tr.insertCell(); vTd.className='var-col';
+          vTd.innerHTML = `<div class="cell-inner">${pv!==null?variance(v,pv,varType):'—'}</div>`;
+        }
+        if (showRoll) {
+          const rTd = tr.insertCell(); rTd.className='roll-col';
+          rTd.innerHTML = `<div class="cell-inner">${pv!==null?fmtAbs(v-pv):'—'}</div>`;
+        }
+      });
+
+      const tot = getTotal(m);
+      const ptot = prevM ? getTotal(prevM) : null;
+      const totTd = tr.insertCell(); totTd.className='total-col';
+      totTd.innerHTML = `<div class="cell-inner">${fmt(tot)}</div>`;
+      if (showVar) {
+        const vTd=tr.insertCell(); vTd.className='total-col var-col';
+        vTd.innerHTML=`<div class="cell-inner">${ptot!==null?variance(tot,ptot,varType):'—'}</div>`;
+      }
+      if (showRoll) {
+        const rTd=tr.insertCell(); rTd.className='total-col roll-col';
+        rTd.innerHTML=`<div class="cell-inner">${ptot!==null?fmtAbs(tot-ptot):'—'}</div>`;
+      }
+    });
+  });
+
+  // Footer
+  let fRow = '<tr><td>GRAND TOTAL (Actuals)</td>';
+  states.forEach(s => {
+    fRow+=`<td>${fmt(grandTotal[s])}</td>`;
+    if(showVar) fRow+='<td></td>';
+    if(showRoll) fRow+='<td></td>';
+  });
+  fRow+=`<td>${fmt(grandTotal.Total)}</td>`;
+  if(showVar) fRow+='<td></td>';
+  if(showRoll) fRow+='<td></td>';
+  fRow+='</tr>';
+  document.getElementById('tableFoot').innerHTML=fRow;
+
+  renderSummaryCards(states, effectiveLastMonth, projRaw, projMonths, getVal, getTotal);
+}
+
+/* ═══════════════════════════════════════
+   TAB 2 — STATE BREAKDOWN
+═══════════════════════════════════════ */
+function renderBreakdown() {
+  const s = currentStateBreakdown;
+  const varType = document.getElementById('varianceType').value;
+  const showRoll = document.getElementById('rollingVar').value === 'show';
+  const showVar = varType !== 'hide';
+
+  let hRow = `<tr><th>Month</th><th>${s} Mailed</th>`;
+  if (showVar) hRow += `<th class="var-col">MoM Variance</th>`;
+  if (showRoll) hRow += `<th class="roll-col">1-Month Rolling Δ</th>`;
+  hRow += `<th class="total-col">% of Month Total</th><th class="total-col">YTD Cumulative</th></tr>`;
+  document.getElementById('tableHead').innerHTML = hRow;
+
+  const byYear = {};
+  MONTHS.forEach(m => { const y=m.split('-')[0]; if(!byYear[y])byYear[y]=[]; byYear[y].push(m); });
+  const colspan = 2+(showVar?1:0)+(showRoll?1:0)+2;
+
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  let grandT=0;
+
+  Object.keys(byYear).sort().forEach(year => {
+    const sep=tbody.insertRow(); sep.className='section-sep';
+    const sc=sep.insertCell(); sc.colSpan=colspan; sc.textContent=year;
+    let ytd=0;
+    byYear[year].forEach(m => {
+      const v=getData(m,s);
+      const prevM=MONTHS[MONTHS.indexOf(m)-1];
+      const pv=prevM?getData(prevM,s):null;
+      const mTot=ALL_STATES.reduce((a,st)=>a+getData(m,st),0);
+      const pct=mTot>0?(v/mTot*100).toFixed(1):'0.0';
+      ytd+=v; grandT+=v;
+
+      const tr=tbody.insertRow();
+      const tdM=tr.insertCell(); tdM.innerHTML=`<div class="cell-inner">${m}</div>`;
+
+      const tdV=tr.insertCell();
+      tdV.innerHTML=`<div class="cell-inner">${fmt(v)}</div>`;
+      makeEditable(tdV, m, s, v, false);
+
+      if(showVar){const vt=tr.insertCell();vt.className='var-col';vt.innerHTML=`<div class="cell-inner">${pv!==null?variance(v,pv,varType):'—'}</div>`;}
+      if(showRoll){const rt=tr.insertCell();rt.className='roll-col';rt.innerHTML=`<div class="cell-inner">${pv!==null?fmtAbs(v-pv):'—'}</div>`;}
+      const pct2=tr.insertCell();pct2.className='total-col';pct2.innerHTML=`<div class="cell-inner">${pct}%</div>`;
+      const ytdTd=tr.insertCell();ytdTd.className='total-col';ytdTd.innerHTML=`<div class="cell-inner">${fmt(ytd)}</div>`;
+    });
+  });
+
+  let fRow=`<tr><td>${s} All-Time Total</td><td>${fmt(grandT)}</td>`;
+  if(showVar) fRow+='<td></td>'; if(showRoll) fRow+='<td></td>';
+  fRow+='<td></td><td></td></tr>';
+  document.getElementById('tableFoot').innerHTML=fRow;
+
+  const stateVals=MONTHS.map(m=>getData(m,s));
+  const lastVal=stateVals[stateVals.length-1];
+  const prevVal=stateVals[stateVals.length-2];
+  const mom=prevVal?((lastVal-prevVal)/prevVal*100):0;
+  const peakM=MONTHS.reduce((best,m)=>getData(m,s)>getData(best,s)?m:best,MONTHS[0]);
+  const avg3=stateVals.slice(-3).reduce((a,b)=>a+b,0)/3;
+  const editCount=MONTHS.filter(m=>isOverridden(m,s)).length;
+
+  document.getElementById('summaryCards').innerHTML=`
+    <div class="card hi"><div class="lbl">${s} — All-Time Total</div><div class="val">${fmt(grandT)}</div><div class="sub">${MONTHS.filter(m=>getData(m,s)>0).length} active months</div></div>
+    <div class="card"><div class="lbl">Latest (${MONTHS[MONTHS.length-1]})</div><div class="val">${fmt(lastVal)}</div><div class="sub">MoM: ${mom>=0?'+':''}${mom.toFixed(1)}%</div></div>
+    <div class="card"><div class="lbl">Peak Month</div><div class="val">${peakM}</div><div class="sub">${fmt(getData(peakM,s))} mailed</div></div>
+    ${editCount>0?`<div class="card amber"><div class="lbl">Edited Months</div><div class="val">${editCount}</div><div class="sub">Click cells to modify</div></div>`:`<div class="card"><div class="lbl">3-Month Avg</div><div class="val">${fmt(avg3)}</div><div class="sub">Rolling last 3 months</div></div>`}
+  `;
+}
+
+/* ═══════════════════════════════════════
+   TAB 3 — ALL-TIME TOTALS
+═══════════════════════════════════════ */
+function renderTotals() {
+  document.getElementById('tableHead').innerHTML=`<tr><th>State</th><th>All-Time Total</th><th>% Share</th><th>Active Months</th><th>Peak Month</th><th>Peak Volume</th><th>Avg / Active Mo</th><th>Last 3-Mo Avg</th></tr>`;
+  const states=ALL_STATES;
+  const grandAll=states.reduce((a,s)=>a+MONTHS.reduce((b,m)=>b+getData(m,s),0),0);
+  let rows='';
+  states.forEach(s=>{
+    const total=MONTHS.reduce((a,m)=>a+getData(m,s),0);
+    const active=MONTHS.filter(m=>getData(m,s)>0).length;
+    const peak=MONTHS.reduce((best,m)=>getData(m,s)>getData(best,s)?m:best,MONTHS[0]);
+    const avg=active?total/active:0;
+    const avg3=MONTHS.slice(-3).reduce((a,m)=>a+getData(m,s),0)/3;
+    const pct=grandAll?(total/grandAll*100).toFixed(1):'0.0';
+    const editMark=MONTHS.some(m=>isOverridden(m,s))?' ✏':'';
+    rows+=`<tr><td>${s}${editMark}</td><td>${fmt(total)}</td><td>${pct}%</td><td>${active}</td><td>${peak}</td><td>${fmt(getData(peak,s))}</td><td>${fmt(avg)}</td><td>${fmt(avg3)}</td></tr>`;
+  });
+  rows+=`<tr style="font-weight:700;background:#f0f4ff"><td>ALL STATES</td><td>${fmt(grandAll)}</td><td>100%</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`;
+  document.getElementById('tableBody').innerHTML=rows;
+  document.getElementById('tableFoot').innerHTML='';
+
+  const lm=MONTHS[MONTHS.length-1], pm=MONTHS[MONTHS.length-2];
+  const lt=states.reduce((a,s)=>a+getData(lm,s),0);
+  const pt=states.reduce((a,s)=>a+getData(pm,s),0);
+  const mom=pt?((lt-pt)/pt*100):0;
+  const top=states.reduce((best,s)=>MONTHS.reduce((a,m)=>a+getData(m,s),0)>MONTHS.reduce((a,m)=>a+getData(m,best),0)?s:best,states[0]);
+  document.getElementById('summaryCards').innerHTML=`
+    <div class="card hi"><div class="lbl">Grand Total (All States)</div><div class="val">${fmt(grandAll)}</div><div class="sub">Sep 2022 – Apr 2026</div></div>
+    <div class="card"><div class="lbl">Last Month (${lm})</div><div class="val">${fmt(lt)}</div><div class="sub">MoM: ${mom>=0?'+':''}${mom.toFixed(1)}% vs ${pm}</div></div>
+    <div class="card"><div class="lbl">Top State</div><div class="val">${top}</div><div class="sub">${fmt(MONTHS.reduce((a,m)=>a+getData(m,top),0))} total</div></div>
+    <div class="card"><div class="lbl">Edits Applied</div><div class="val">${countOverrides()}</div><div class="sub">${countOverrides()>0?'↺ Reset in controls':'No overrides active'}</div></div>
+  `;
+}
+
+/* ── Summary cards for Monthly tab ── */
+function renderSummaryCards(states, lastMonth, projRaw, projMonths, getVal, getTotal) {
+  const grandTotal=states.reduce((a,s)=>a+MONTHS.reduce((b,m)=>b+getData(m,s),0),0);
+  const lastTotal=getTotal(lastMonth);
+  const prevMonth=MONTHS[MONTHS.length-2];
+  const prevTotal=getTotal(prevMonth);
+  const mom=prevTotal?((lastTotal-prevTotal)/prevTotal*100):0;
+  const projTotal=projMonths.reduce((a,m)=>a+getTotal(m),0);
+  const top=states.reduce((best,s)=>MONTHS.reduce((a,m)=>a+getData(m,s),0)>MONTHS.reduce((a,m)=>a+getData(m,best),0)?s:best,states[0]);
+  const edits=countOverrides(), fins=countFinalized();
+  updateEditBadge();
+  document.getElementById('summaryCards').innerHTML=`
+    <div class="card hi"><div class="lbl">Total Mailed (All Time)</div><div class="val">${fmt(grandTotal)}</div><div class="sub">${states.join(', ')}</div></div>
+    <div class="card"><div class="lbl">Last Month (${lastMonth})</div><div class="val">${fmt(lastTotal)}</div><div class="sub">MoM: ${mom>=0?'+':''}${mom.toFixed(1)}% vs ${prevMonth}</div></div>
+    <div class="card"><div class="lbl">Top State</div><div class="val">${top}</div><div class="sub">${fmt(MONTHS.reduce((a,m)=>a+getData(m,top),0))} total</div></div>
+    ${fins>0
+      ? `<div class="card" style="background:#f0fdf4;border:1px solid #86efac"><div class="lbl" style="color:#166534">Finalized Months</div><div class="val" style="color:#166534">${fins}</div><div class="sub" style="color:#15803d">${Object.keys(FINALIZED).join(', ')}</div></div>`
+      : edits>0
+        ? `<div class="card amber"><div class="lbl">Active Edits</div><div class="val">${edits}</div><div class="sub">Projections updated live</div></div>`
+        : `<div class="card"><div class="lbl">Projected Next ${projMonths.length} Mo</div><div class="val">${projTotal>0?fmt(projTotal):'—'}</div><div class="sub">${projMonths.join(', ')}</div></div>`}
+  `;
+}
+
+/* ── Export CSV ── */
+function exportCSV() {
+  const states=getSelectedStates();
+  const projectN=parseInt(document.getElementById('projectMonths').value)||3;
+  const projMethod=document.getElementById('projMethod').value;
+  const lastMonth=MONTHS[MONTHS.length-1];
+  const projByState={};
+  states.forEach(s=>{projByState[s]=getProjected(s,lastMonth,projMethod,projectN);});
+  const projMonths=projByState[states[0]].map(r=>r.month);
+  const projRaw={};
+  projMonths.forEach((m,i)=>{
+    projRaw[m]={};
+    states.forEach(s=>{projRaw[m][s]=projByState[s][i].value;});
+  });
+  const allMonths=[...MONTHS,...projMonths];
+  const editedCol = states.map(s=>`${s}_edited`);
+  let csv=`Month,Type,${states.join(',')},Total,Edited_Cells\n`;
+  allMonths.forEach(m=>{
+    const isProj=!!projRaw[m];
+    const vals=states.map(s=>isProj?(isOverridden(m,s)?OVERRIDES[m][s]:projRaw[m][s]):getData(m,s));
+    const edited=states.filter(s=>isOverridden(m,s)).join(';');
+    csv+=`${m},${isProj?'Projected':'Actual'},${vals.join(',')},${vals.reduce((a,b)=>a+b,0)},"${edited}"\n`;
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='MVC_State_Projections.csv'; a.click();
+}
+
+switchTab('monthly');
+
+/* ════════════════════════════════════════
+   UPLOAD ACTUALS
+════════════════════════════════════════ */
+function openUploadModal() {
+  document.getElementById('uploadModal').style.display = 'flex';
+  document.getElementById('uploadPreview').style.display = 'none';
+  document.getElementById('btnConfirmUpload').style.display = 'none';
+  document.getElementById('uploadDrop').style.display = 'block';
+  const errEl = document.getElementById('uploadError');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+}
+function closeUploadModal() {
+  document.getElementById('uploadModal').style.display = 'none';
+  pendingUpload = null;
+  const fi = document.getElementById('fileInput');
+  if (fi) fi.value = '';
+  const errEl = document.getElementById('uploadError');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  document.getElementById('uploadPreview').style.display = 'none';
+  document.getElementById('btnConfirmUpload').style.display = 'none';
+  document.getElementById('uploadDrop').style.display = 'block';
+}
+
+function handleFileSelect(e) {
+  console.log('[MVC] handleFileSelect fired, files:', e.target.files.length);
+  processFile(e.target.files[0]);
+}
+function handleFileDrop(e) {
+  console.log('[MVC] handleFileDrop fired');
+  processFile(e.dataTransfer.files[0]);
+}
+
+function showUploadStatus(msg) {
+  const el = document.getElementById('uploadError');
+  el.style.background = '#eff6ff';
+  el.style.border = '1px solid #93c5fd';
+  el.style.color = '#1d4ed8';
+  el.textContent = '⏳ ' + msg;
+  el.style.display = 'block';
+}
+
+function showUploadError(msg) {
+  const el = document.getElementById('uploadError');
+  el.style.background = '#fee2e2';
+  el.style.border = '1px solid #f87171';
+  el.style.color = '#b91c1c';
+  el.textContent = '⚠ ' + msg;
+  el.style.display = 'block';
+  document.getElementById('uploadPreview').style.display = 'none';
+  document.getElementById('btnConfirmUpload').style.display = 'none';
+  document.getElementById('uploadDrop').style.display = 'block';
+}
+
+function processFile(file) {
+  console.log('[MVC] processFile called, file:', file ? file.name : 'undefined');
+  if (!file) {
+    showUploadError('No file received. Try dragging the file directly onto the drop zone.');
+    return;
+  }
+  const ext = file.name.split('.').pop().toLowerCase();
+  console.log('[MVC] file extension:', ext, 'size:', file.size);
+
+  // Reset error div
+  const errEl = document.getElementById('uploadError');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+
+  showUploadStatus(`Reading "${file.name}" (${(file.size/1024).toFixed(1)} KB)…`);
+
+  const reader = new FileReader();
+
+  reader.onerror = function() {
+    console.error('[MVC] FileReader error:', reader.error);
+    showUploadError('FileReader failed: ' + (reader.error ? reader.error.message : 'unknown error') +
+      '. If opening from iCloud Drive, try copying the file to your Desktop first.');
+  };
+
+  reader.onload = function(e) {
+    console.log('[MVC] FileReader onload fired, result length:', e.target.result ? e.target.result.length || e.target.result.byteLength : 0);
+    let rows = [];
+    try {
+      if (ext === 'csv') {
+        showUploadStatus('Parsing CSV…');
+        rows = parseCSV(e.target.result);
+        console.log('[MVC] parsed rows:', rows.length, 'first row keys:', rows.length ? Object.keys(rows[0]) : []);
+      } else if (ext === 'xlsx' || ext === 'xls') {
+        if (typeof XLSX === 'undefined') {
+          showUploadError('Excel library not loaded — please try a .csv file instead.');
+          return;
+        }
+        showUploadStatus('Parsing Excel…');
+        const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws, { raw: false });
+        console.log('[MVC] Excel rows:', rows.length);
+      } else {
+        showUploadError('Unsupported file type. Please upload a .csv or .xlsx file.');
+        return;
+      }
+    } catch(err) {
+      console.error('[MVC] parse error:', err);
+      showUploadError('Parse error: ' + err.message);
+      return;
+    }
+
+    showUploadStatus('Aggregating monthly totals…');
+    setTimeout(function() {
+      try {
+        console.log('[MVC] step: aggregating', rows.length, 'rows');
+        const parsed = aggregateByMonth(rows);
+        console.log('[MVC] step: aggregation done,', Object.keys(parsed).length, 'months');
+
+        if (Object.keys(parsed).length === 0) {
+          showUploadError('No valid data found. Detected headers: ' +
+            (rows.length ? Object.keys(rows[0]).join(', ') : 'none'));
+          return;
+        }
+
+        console.log('[MVC] step: calling showUploadPreview');
+        pendingUpload = parsed;
+        showUploadPreview(parsed, file.name);
+        console.log('[MVC] step: showUploadPreview complete');
+
+      } catch(err) {
+        console.error('[MVC] error in upload pipeline:', err);
+        showUploadError('Upload error at: ' + (err.message || String(err)) +
+          ' — check browser console (Cmd+Option+I) for details.');
+      }
+    }, 50);
+  };
+
+  try {
+    if (ext === 'csv') reader.readAsText(file);
+    else reader.readAsArrayBuffer(file);
+    console.log('[MVC] FileReader.read called successfully');
+  } catch(err) {
+    console.error('[MVC] FileReader.read failed:', err);
+    showUploadError('Could not start reading file: ' + err.message);
+  }
+}
+
+/* Parse CSV text into array of row objects */
+function parseCSV(text) {
+  // Normalise line endings and strip BOM
+  text = text.replace(/^﻿/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = text.trim().split('\n').filter(l => l.trim());
+  if (lines.length < 2) return [];
+  // Parse a single line respecting quoted fields
+  function splitLine(line) {
+    const vals = [];
+    let cur = '', inQ = false;
+    for (let c of line) {
+      if (c === '"') { inQ = !inQ; }
+      else if (c === ',' && !inQ) { vals.push(cur.trim().replace(/^"|"$/g,'')); cur = ''; }
+      else cur += c;
+    }
+    vals.push(cur.trim().replace(/^"|"$/g,''));
+    return vals;
+  }
+  const headers = splitLine(lines[0]).map(h => h.trim().replace(/^"|"$/g,''));
+  return lines.slice(1).map(line => {
+    const vals = splitLine(line);
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = vals[i] ?? ''; });
+    return obj;
+  });
+}
+
+/* Extract YYYY-MM from a raw date string. Returns '' if unrecognised.
+   Handles: 2022-09-20, 2022-09, 9/20/2022, 9/20/22 */
+function extractMonth(rawDate) {
+  if (!rawDate) return '';
+  const str = rawDate.toString().trim();
+  // ISO: 2022-09-20 or 2022-09
+  if (/^\d{4}-\d{2}/.test(str)) return str.substring(0, 7);
+  // M/D/YYYY or MM/DD/YYYY
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
+    const parts = str.split('/');
+    return `${parts[2]}-${String(parts[0]).padStart(2,'0')}`;
+  }
+  // M/D/YY or MM/DD/YY (2-digit year → assume 2000s)
+  if (/^\d{1,2}\/\d{1,2}\/\d{2}$/.test(str)) {
+    const parts = str.split('/');
+    const yr = parseInt(parts[2]) + 2000;
+    return `${yr}-${String(parts[0]).padStart(2,'0')}`;
+  }
+  return '';
+}
+
+/* Aggregate row-level data into monthly totals by state.
+   Because the Campaign column may contain unquoted commas, we cannot
+   rely on column-name mapping for every row.  Instead we:
+   1. Try the named 'Mailed' key first (works when Campaign has no commas).
+   2. Scan every value in the row for one that looks like a date (YYYY-MM-DD
+      or MM/DD/YYYY) — this handles rows where commas in Campaign shift indices.
+   3. For state values we do the same: try name first, then look for the
+      numeric values at the known positions after the detected date. */
+function aggregateByMonth(rows) {
+  const monthly = {};
+
+  rows.forEach(row => {
+    /* ── Step 1: find the date ── */
+    let month = '';
+    // Try named keys first
+    for (const k of ['Mailed','mailed','Date','date']) {
+      month = extractMonth(row[k]);
+      if (month) break;
+    }
+    // Fallback: scan all values for a date pattern
+    if (!month) {
+      for (const v of Object.values(row)) {
+        month = extractMonth(v);
+        if (month) break;
+      }
+    }
+    if (!month) return;
+
+    /* ── Step 2: accumulate state values ── */
+    if (!monthly[month]) monthly[month] = { CT:0, MI:0, NJ:0, NY:0, TX:0, AZ:0, PA:0 };
+
+    // Try named state keys first
+    let stateFound = false;
+    ALL_STATES.forEach(s => {
+      if (row[s] !== undefined && row[s] !== '') {
+        const v = parseInt(row[s].toString().replace(/,/g,''));
+        if (!isNaN(v)) { monthly[month][s] += v; stateFound = true; }
+      }
+    });
+
+    // If named keys missed (due to column shift), find values by position:
+    // locate the date value's position, then the 7 numbers after it are
+    // CT, MI, NJ, NY, TX, AZ, PA in order.
+    if (!stateFound) {
+      const vals = Object.values(row);
+      let dateIdx = -1;
+      for (let i = 0; i < vals.length; i++) {
+        if (extractMonth(vals[i]) === month) { dateIdx = i; break; }
+      }
+      if (dateIdx !== -1 && dateIdx + ALL_STATES.length < vals.length) {
+        ALL_STATES.forEach((s, i) => {
+          const v = parseInt((vals[dateIdx + 1 + i] || '0').toString().replace(/,/g,''));
+          if (!isNaN(v)) monthly[month][s] += v;
+        });
+      }
+    }
+  });
+  return monthly;
+}
+
+/* Show preview table in modal */
+function showUploadPreview(parsed, filename) {
+  const allActual = getAllActualMonths();
+  const months = Object.keys(parsed).sort();
+  const newMonths    = months.filter(m => !allActual.includes(m) && !RAW[m]);
+  const updateMonths = months.filter(m =>  allActual.includes(m) ||  RAW[m]);
+
+  // Clear any status/error message
+  const errEl = document.getElementById('uploadError');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+
+  document.getElementById('uploadDrop').style.display = 'none';
+  document.getElementById('uploadPreview').style.display = 'block';
+  document.getElementById('btnConfirmUpload').style.display = 'inline-block';
+
+  document.getElementById('uploadStats').innerHTML = `
+    <span class="stat-pill stat-new">✓ ${newMonths.length} new month${newMonths.length!==1?'s':''}</span>
+    <span class="stat-pill stat-update">↻ ${updateMonths.length} existing month${updateMonths.length!==1?'s':''} will update</span>
+    <span class="stat-pill stat-skip">📄 ${filename}</span>
+  `;
+
+  document.getElementById('previewHead').innerHTML =
+    `<th>Month</th>${ALL_STATES.map(s=>`<th>${s}</th>`).join('')}<th>Total</th>`;
+
+  document.getElementById('previewBody').innerHTML = months.map(m => {
+    const isNew = newMonths.includes(m);
+    const total = ALL_STATES.reduce((a,s)=>a+(parsed[m][s]||0),0);
+    return `<tr class="${isNew?'row-new':'row-update'}">
+      <td>${m}</td>
+      ${ALL_STATES.map(s=>`<td>${(parsed[m][s]||0).toLocaleString()}</td>`).join('')}
+      <td><strong>${total.toLocaleString()}</strong></td>
+    </tr>`;
+  }).join('');
+}
+
+/* Commit the upload */
+function confirmUpload() {
+  if (!pendingUpload) return;
+  const overwrite = document.getElementById('chkOverwrite').checked;
+  const allActual = getAllActualMonths();
+  let imported = 0, skipped = 0;
+
+  Object.entries(pendingUpload).forEach(([m, vals]) => {
+    const exists = RAW[m] || UPLOADED[m];
+    if (exists && !overwrite) { skipped++; return; }
+    if (RAW[m]) {
+      // Month is in RAW — store as override so it takes priority
+      if (!OVERRIDES[m]) OVERRIDES[m] = {};
+      ALL_STATES.forEach(s => { OVERRIDES[m][s] = vals[s] || 0; });
+    } else {
+      // New month — add to UPLOADED
+      UPLOADED[m] = {};
+      ALL_STATES.forEach(s => { UPLOADED[m][s] = vals[s] || 0; });
+    }
+    imported++;
+  });
+
+  localStorage.setItem(LS_OVERRIDES, JSON.stringify(OVERRIDES));
+  localStorage.setItem(LS_UPLOADED,  JSON.stringify(UPLOADED));
+  updateEditBadge();
+  closeUploadModal();
+  render();
+  toast(`✓ Imported ${imported} month${imported!==1?'s':''}${skipped>0?`, ${skipped} skipped`:''}.`);
+}
+
+/* ── Wire up modal buttons + Escape key ── */
+document.getElementById('btnCancelUpload').addEventListener('click', closeUploadModal);
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeUploadModal();
+});
+document.getElementById('btnConfirmUpload').addEventListener('click', confirmUpload);
+document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+console.log('[MVC v2.5] Upload module loaded — aggregateByMonth with date-scan fallback');
+</script>
+</body>
+</html>
