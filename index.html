@@ -200,6 +200,7 @@
   <button class="btn btn-primary" onclick="selectAllStates()">All States</button>
   <button class="btn btn-secondary" onclick="exportCSV()">Export CSV</button>
   <button class="btn btn-primary" onclick="openUploadModal()" style="background:#059669">📥 Upload Actuals</button>
+  <button class="btn btn-primary" onclick="exportHTML()" style="background:#7c3aed" title="Bake current data into HTML and download for publishing">💾 Save &amp; Export HTML</button>
   <button class="btn btn-warn hidden" id="btnResetAll" onclick="resetAll()">↺ Reset All Edits</button>
 </div>
 
@@ -274,6 +275,16 @@
 <script>
 /* global state — var avoids temporal dead zone issues */
 var pendingUpload = null;
+
+/* ── BAKED DATA (injected by Save & Export HTML) ── */
+var BAKED_DATA = null; /* BAKED_DATA_PLACEHOLDER */
+if (BAKED_DATA) {
+  try {
+    if (BAKED_DATA.overrides) localStorage.setItem('mvc_overrides', JSON.stringify(BAKED_DATA.overrides));
+    if (BAKED_DATA.finalized) localStorage.setItem('mvc_finalized', JSON.stringify(BAKED_DATA.finalized));
+    if (BAKED_DATA.uploaded)  localStorage.setItem('mvc_uploaded',  JSON.stringify(BAKED_DATA.uploaded));
+  } catch(e) { console.warn('[MVC] Could not restore baked data', e); }
+}
 
 /* ════════════════════════════════════════
    DATA
@@ -859,6 +870,35 @@ function exportCSV() {
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   a.download='MVC_State_Projections.csv'; a.click();
+}
+
+/* ── Save & Export HTML ── */
+function exportHTML() {
+  try {
+    const bakedData = {
+      overrides: JSON.parse(localStorage.getItem('mvc_overrides') || '{}'),
+      finalized: JSON.parse(localStorage.getItem('mvc_finalized') || '{}'),
+      uploaded:  JSON.parse(localStorage.getItem('mvc_uploaded')  || '{}')
+    };
+    const injection = 'var BAKED_DATA = ' + JSON.stringify(bakedData) + '; /* BAKED_DATA_PLACEHOLDER */';
+    fetch(window.location.href)
+      .then(r => r.text())
+      .then(html => {
+        const updated = html.replace(/var BAKED_DATA = .*?\/\* BAKED_DATA_PLACEHOLDER \*\//s, injection);
+        const blob = new Blob([updated], { type: 'text/html' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'index.html';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        toast('✅ index.html downloaded — replace your local file and push to GitHub');
+      })
+      .catch(() => {
+        toast('⚠️ Could not fetch page source. Open the Netlify URL instead of a local file.');
+      });
+  } catch(e) {
+    toast('⚠️ Export failed: ' + e.message);
+  }
 }
 
 switchTab('monthly');
