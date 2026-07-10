@@ -849,21 +849,32 @@ function exportCSV() {
   const states=getSelectedStates();
   const projectN=parseInt(document.getElementById('projectMonths').value)||3;
   const projMethod=document.getElementById('projMethod').value;
-  const lastMonth=MONTHS[MONTHS.length-1];
+
+  // Mirror renderMonthly: use effectiveLastMonth so projections start from the same point
+  const allActual = getAllActualMonths();
+  const finMonths = Object.keys(FINALIZED).sort();
+  const effectiveLastMonth = finMonths.length > 0
+    ? finMonths[finMonths.length-1]
+    : allActual[allActual.length-1];
+  const baseMonths = [...new Set([...allActual, ...finMonths])].sort();
+
   const projByState={};
-  states.forEach(s=>{projByState[s]=getProjected(s,lastMonth,projMethod,projectN);});
+  states.forEach(s=>{projByState[s]=getProjected(s,effectiveLastMonth,projMethod,projectN);});
   const projMonths=projByState[states[0]].map(r=>r.month);
   const projRaw={};
   projMonths.forEach((m,i)=>{
     projRaw[m]={};
     states.forEach(s=>{projRaw[m][s]=projByState[s][i].value;});
   });
-  const allMonths=[...MONTHS,...projMonths];
-  const editedCol = states.map(s=>`${s}_edited`);
+
+  const allMonths=[...baseMonths,...projMonths];
   let csv=`Month,Type,${states.join(',')},Total,Edited_Cells\n`;
   allMonths.forEach(m=>{
     const isProj=!!projRaw[m];
-    const vals=states.map(s=>isProj?(isOverridden(m,s)?OVERRIDES[m][s]:projRaw[m][s]):getData(m,s));
+    const vals=states.map(s=>{
+      if(isProj) return isOverridden(m,s)?OVERRIDES[m][s]:projRaw[m][s];
+      return getData(m,s);
+    });
     const edited=states.filter(s=>isOverridden(m,s)).join(';');
     csv+=`${m},${isProj?'Projected':'Actual'},${vals.join(',')},${vals.reduce((a,b)=>a+b,0)},"${edited}"\n`;
   });
