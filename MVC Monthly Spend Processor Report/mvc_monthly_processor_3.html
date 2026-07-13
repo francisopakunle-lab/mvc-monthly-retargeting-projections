@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MVC Monthly Processor</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0d14;
+    --surface: #111520;
+    --surface2: #161c2d;
+    --border: #1e2a45;
+    --accent: #3d7fff;
+    --accent2: #00e5c3;
+    --accent3: #ff6b4a;
+    --text: #e8edf8;
+    --text-muted: #6b7a99;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Syne', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  .header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 16px 32px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .header h1 { font-size: 17px; font-weight: 800; letter-spacing: -0.5px; }
+  .header span { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; display: block; margin-bottom: 2px; }
+  .reset-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+    padding: 8px 14px; border-radius: 6px; font-family: 'DM Mono', monospace; font-size: 11px;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .reset-btn:hover { border-color: var(--accent3); color: var(--accent3); }
+
+  /* UPLOAD */
+  #upload-zone {
+    display: flex; align-items: center; justify-content: center;
+    min-height: calc(100vh - 65px); padding: 40px;
+  }
+  .drop-card {
+    border: 2px dashed var(--border); border-radius: 16px; padding: 60px 48px;
+    text-align: center; cursor: pointer; transition: all 0.3s; max-width: 480px; width: 100%;
+    background: var(--surface);
+  }
+  .drop-card:hover, .drop-card.drag-over { border-color: var(--accent2); background: var(--surface2); }
+  .drop-icon { font-size: 44px; margin-bottom: 18px; display: block; }
+  .drop-card h2 { font-size: 20px; font-weight: 700; margin-bottom: 10px; }
+  .drop-card p { color: var(--text-muted); font-size: 13px; font-family: 'DM Mono', monospace; line-height: 1.6; }
+  .tag { display: inline-block; background: var(--surface2); border: 1px solid var(--border); padding: 3px 8px; border-radius: 4px; font-family: 'DM Mono', monospace; font-size: 10px; color: var(--accent2); margin-top: 14px; }
+  #file-input { display: none; }
+
+  /* PRICING PANEL */
+  #pricing-panel { display: none; max-width: 640px; margin: 0 auto; padding: 40px 32px; }
+  .panel-title { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
+  .panel-sub { color: var(--text-muted); font-family: 'DM Mono', monospace; font-size: 12px; margin-bottom: 28px; line-height: 1.6; }
+  .file-badge { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 14px; font-family: 'DM Mono', monospace; font-size: 12px; color: var(--accent2); margin-bottom: 28px; display: inline-block; }
+
+  .price-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 28px; }
+  .price-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; position: relative; overflow: hidden; }
+  .price-card::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+  .price-card.eng::after { background: var(--accent); }
+  .price-card.spa::after { background: var(--accent2); }
+  .price-card.multi-eng::after { background: #a855f7; }
+  .price-card.multi-spa::after { background: var(--accent3); }
+  .price-card-type { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+  .price-card-name { font-size: 13px; font-weight: 700; margin-bottom: 14px; color: var(--text); }
+  .price-input-wrap { display: flex; align-items: center; gap: 8px; }
+  .price-prefix { font-family: 'DM Mono', monospace; font-size: 15px; color: var(--accent2); font-weight: 600; }
+  .price-input {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 12px; border-radius: 6px; font-family: 'DM Mono', monospace; font-size: 14px;
+    width: 100%; outline: none; transition: border-color 0.2s;
+  }
+  .price-input:focus { border-color: var(--accent2); }
+  .price-input::placeholder { color: var(--text-muted); }
+
+  .generate-btn {
+    background: var(--accent2); color: #0a0d14; border: none; padding: 14px 32px;
+    border-radius: 8px; font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800;
+    cursor: pointer; transition: all 0.2s; width: 100%; letter-spacing: 0.3px;
+  }
+  .generate-btn:hover { background: #00ffd9; transform: translateY(-1px); }
+
+  /* RESULTS */
+  #results-panel { display: none; padding: 32px; }
+
+  .results-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+  .results-title { font-size: 18px; font-weight: 800; }
+  .results-actions { display: flex; gap: 10px; }
+  .copy-btn, .dl-btn {
+    background: transparent; border: 1px solid var(--accent2); color: var(--accent2);
+    padding: 8px 16px; border-radius: 6px; font-family: 'DM Mono', monospace; font-size: 11px;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .copy-btn:hover, .dl-btn:hover { background: var(--accent2); color: #0a0d14; }
+  .copy-btn.copied { background: var(--accent2); color: #0a0d14; }
+
+  /* TOTALS ROW */
+  .totals-bar {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px;
+  }
+  .total-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .total-card-label { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+  .total-card-val { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+  .total-card-val.blue { color: var(--accent); }
+  .total-card-val.green { color: var(--accent2); }
+  .total-card-val.purple { color: #a855f7; }
+  .total-card-val.orange { color: var(--accent3); }
+
+  /* TABLE */
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead { background: var(--surface2); border-bottom: 1px solid var(--border); }
+  th { padding: 11px 16px; text-align: left; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); font-weight: 500; white-space: nowrap; }
+  th.num { text-align: right; }
+  td { padding: 10px 16px; border-bottom: 1px solid rgba(30,42,69,0.5); font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text); white-space: nowrap; }
+  td.num { text-align: right; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .tfoot-row td { background: var(--surface2); font-weight: 700; color: var(--accent2); border-top: 1px solid var(--border); }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+  .badge-eng { background: rgba(61,127,255,0.15); color: #3d7fff; border: 1px solid rgba(61,127,255,0.3); }
+  .badge-spa { background: rgba(0,229,195,0.12); color: #00e5c3; border: 1px solid rgba(0,229,195,0.25); }
+
+  @media (max-width: 700px) {
+    .price-grid { grid-template-columns: 1fr; }
+    .totals-bar { grid-template-columns: 1fr 1fr; }
+    #results-panel { padding: 16px; }
+    #pricing-panel { padding: 24px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <span>Metro Vein Centers</span>
+    <h1>Monthly CSV Processor</h1>
+  </div>
+  <button class="reset-btn" onclick="resetAll()">↩ Upload New File</button>
+</div>
+
+<input type="file" id="file-input" accept=".csv">
+
+<!-- STEP 1: UPLOAD -->
+<div id="upload-zone">
+  <div class="drop-card" id="drop-area">
+    <span class="drop-icon">📂</span>
+    <h2>Upload Mailed By State CSV</h2>
+    <p>Filter your file to the month you need, then drop it here. The processor will handle the rest.</p>
+    <span class="tag">.CSV</span>
+  </div>
+</div>
+
+<!-- STEP 2: PRICING -->
+<div id="pricing-panel">
+  <div class="panel-title">Enter Price Per Piece</div>
+  <div class="panel-sub">Set the cost per piece for each of the 4 campaign types below, then generate your report.</div>
+  <div class="file-badge" id="csv-filename">—</div>
+
+  <div class="price-grid" style="grid-template-columns: 1fr 1fr; margin-bottom: 14px;">
+    <div class="price-card eng">
+      <div class="price-card-type">Report Period</div>
+      <div class="price-card-name">Month</div>
+      <select class="price-input" id="report-month">
+        <option value="January">January</option>
+        <option value="February">February</option>
+        <option value="March">March</option>
+        <option value="April">April</option>
+        <option value="May">May</option>
+        <option value="June">June</option>
+        <option value="July">July</option>
+        <option value="August">August</option>
+        <option value="September">September</option>
+        <option value="October">October</option>
+        <option value="November">November</option>
+        <option value="December">December</option>
+      </select>
+    </div>
+    <div class="price-card spa">
+      <div class="price-card-type">Report Period</div>
+      <div class="price-card-name">Year</div>
+      <select class="price-input" id="report-year"></select>
+    </div>
+  </div>
+
+  <div class="price-grid">
+    <div class="price-card eng">
+      <div class="price-card-type">Retargeting</div>
+      <div class="price-card-name">English</div>
+      <div class="price-input-wrap">
+        <span class="price-prefix">$</span>
+        <input class="price-input" type="number" step="0.0001" min="0" placeholder="0.0000" id="price-eng">
+      </div>
+    </div>
+    <div class="price-card spa">
+      <div class="price-card-type">Retargeting</div>
+      <div class="price-card-name">Spanish</div>
+      <div class="price-input-wrap">
+        <span class="price-prefix">$</span>
+        <input class="price-input" type="number" step="0.0001" min="0" placeholder="0.0000" id="price-spa">
+      </div>
+    </div>
+    <div class="price-card multi-eng">
+      <div class="price-card-type">Multi Touch</div>
+      <div class="price-card-name">English</div>
+      <div class="price-input-wrap">
+        <span class="price-prefix">$</span>
+        <input class="price-input" type="number" step="0.0001" min="0" placeholder="0.0000" id="price-multi-eng">
+      </div>
+    </div>
+    <div class="price-card multi-spa">
+      <div class="price-card-type">Multi Touch</div>
+      <div class="price-card-name">Spanish</div>
+      <div class="price-input-wrap">
+        <span class="price-prefix">$</span>
+        <input class="price-input" type="number" step="0.0001" min="0" placeholder="0.0000" id="price-multi-spa">
+      </div>
+    </div>
+  </div>
+
+  <button class="generate-btn" onclick="generateReport()">⚡ Generate Report</button>
+</div>
+
+<!-- STEP 3: RESULTS -->
+<div id="results-panel">
+  <div class="results-header">
+    <div class="results-title" id="results-title">Volume & Spend by State</div>
+    <div class="results-actions">
+      <button class="copy-btn" id="copy-btn" onclick="copyTable()">⎘ Copy Table</button>
+      <button class="dl-btn" onclick="downloadCSV()">↓ Download CSV</button>
+    </div>
+  </div>
+
+  <div class="totals-bar" id="totals-bar"></div>
+
+  <div class="table-wrap">
+    <div class="table-scroll">
+      <table id="result-table">
+        <thead>
+          <tr>
+            <th>State</th>
+            <th>Language</th>
+            <th class="num">Volume</th>
+            <th class="num">Spend</th>
+          </tr>
+        </thead>
+        <tbody id="result-body"></tbody>
+        <tfoot id="result-foot"></tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+let csvData = [];
+let reportRows = [];
+
+// ── Drag & Drop / Click ───────────────────────────────────
+const dropArea = document.getElementById('drop-area');
+dropArea.addEventListener('click', () => document.getElementById('file-input').click());
+dropArea.addEventListener('dragover', e => { e.preventDefault(); dropArea.classList.add('drag-over'); });
+dropArea.addEventListener('dragleave', () => dropArea.classList.remove('drag-over'));
+dropArea.addEventListener('drop', e => {
+  e.preventDefault(); dropArea.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+document.getElementById('file-input').addEventListener('change', e => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+// ── Populate year dropdown ────────────────────────────────
+(function initYearSelect() {
+  const yearSel = document.getElementById('report-year');
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  for (let y = currentYear + 1; y >= currentYear - 4; y--) {
+    const opt = document.createElement('option');
+    opt.value = y; opt.textContent = y;
+    yearSel.appendChild(opt);
+  }
+  yearSel.value = currentYear;
+  document.getElementById('report-month').selectedIndex = now.getMonth();
+})();
+
+function loadFile(file) {
+  document.getElementById('csv-filename').textContent = '📄 ' + file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const result = Papa.parse(e.target.result, { header: true, skipEmptyLines: true, dynamicTyping: true });
+    csvData = result.data;
+    document.getElementById('upload-zone').style.display = 'none';
+    document.getElementById('pricing-panel').style.display = 'block';
+  };
+  reader.readAsText(file);
+}
+
+function resetAll() {
+  csvData = []; reportRows = [];
+  document.getElementById('file-input').value = '';
+  document.getElementById('upload-zone').style.display = 'flex';
+  document.getElementById('pricing-panel').style.display = 'none';
+  document.getElementById('results-panel').style.display = 'none';
+  ['price-eng','price-spa','price-multi-eng','price-multi-spa'].forEach(id => document.getElementById(id).value = '');
+}
+
+// ── Campaign classification ───────────────────────────────
+function classify(name) {
+  const isSpanish  = name.includes('Spanish');
+  const isMulti    = name.includes('Multi Touch');
+  if (isMulti && isSpanish)  return 'multi-spa';
+  if (isMulti && !isSpanish) return 'multi-eng';
+  if (!isMulti && isSpanish) return 'spa';
+  return 'eng';
+}
+
+function isEnglish(key) { return key === 'eng' || key === 'multi-eng'; }
+
+// ── Generate ──────────────────────────────────────────────
+function generateReport() {
+  const prices = {
+    'eng':       parseFloat(document.getElementById('price-eng').value)       || 0,
+    'spa':       parseFloat(document.getElementById('price-spa').value)       || 0,
+    'multi-eng': parseFloat(document.getElementById('price-multi-eng').value) || 0,
+    'multi-spa': parseFloat(document.getElementById('price-multi-spa').value) || 0,
+  };
+
+  const month = document.getElementById('report-month').value;
+  const year  = parseInt(document.getElementById('report-year').value);
+
+  const monthIndex = ['January','February','March','April','May','June','July','August','September','October','November','December'].indexOf(month);
+
+  const filteredData = csvData.filter(row => {
+    const mailed = row['Mailed'];
+    if (!mailed) return false;
+    const d = new Date(mailed);
+    return d.getFullYear() === year && d.getMonth() === monthIndex;
+  });
+
+  if (!filteredData.length) {
+    alert(`No rows found for ${month} ${year}. Check your CSV or try a different month/year.`);
+    return;
+  }
+
+  const states = ['CT','MI','NJ','NY','TX','AZ','PA'];
+  const stateMap = {};
+  states.forEach(s => stateMap[s] = { engVol: 0, engSpend: 0, spaVol: 0, spaSpend: 0 });
+
+  filteredData.forEach(row => {
+    const campName = row['Campaign'] || '';
+    const key = classify(campName);
+    const ppp = prices[key];
+    const eng = isEnglish(key);
+
+    states.forEach(st => {
+      const vol = parseInt(row[st]) || 0;
+      if (vol <= 0) return;
+      const spend = vol * ppp;
+      if (eng) { stateMap[st].engVol += vol; stateMap[st].engSpend += spend; }
+      else      { stateMap[st].spaVol += vol; stateMap[st].spaSpend += spend; }
+    });
+  });
+
+  // Build rows — only states with any volume
+  reportRows = states
+    .map(st => ({ state: st, ...stateMap[st], totalVol: stateMap[st].engVol + stateMap[st].spaVol, totalSpend: stateMap[st].engSpend + stateMap[st].spaSpend }))
+    .filter(r => r.totalVol > 0);
+
+  if (!reportRows.length) { alert('No volume found. Check your CSV.'); return; }
+
+  document.getElementById('results-title').textContent = `Volume & Spend by State — ${month} ${year}`;
+
+  renderResults();
+  document.getElementById('pricing-panel').style.display = 'none';
+  document.getElementById('results-panel').style.display = 'block';
+}
+
+function renderResults() {
+  // Totals
+  const totEngVol   = reportRows.reduce((s,r) => s + r.engVol, 0);
+  const totSpaVol   = reportRows.reduce((s,r) => s + r.spaVol, 0);
+  const totEngSpend = reportRows.reduce((s,r) => s + r.engSpend, 0);
+  const totSpaSpend = reportRows.reduce((s,r) => s + r.spaSpend, 0);
+  const totVol      = totEngVol + totSpaVol;
+  const totSpend    = totEngSpend + totSpaSpend;
+
+  document.getElementById('totals-bar').innerHTML = `
+    <div class="total-card">
+      <div class="total-card-label">English Volume</div>
+      <div class="total-card-val blue">${fmtN(totEngVol)}</div>
+    </div>
+    <div class="total-card">
+      <div class="total-card-label">Spanish Volume</div>
+      <div class="total-card-val green">${fmtN(totSpaVol)}</div>
+    </div>
+    <div class="total-card">
+      <div class="total-card-label">Total Volume</div>
+      <div class="total-card-val purple">${fmtN(totVol)}</div>
+    </div>
+    <div class="total-card">
+      <div class="total-card-label">Total Spend</div>
+      <div class="total-card-val orange">${fmt$(totSpend)}</div>
+    </div>
+  `;
+
+  // Body — two rows per state (English then Spanish), skip if zero volume
+  document.getElementById('result-body').innerHTML = reportRows.map(r => {
+    let rows = '';
+    if (r.engVol > 0) rows += `
+      <tr>
+        <td>${r.state}</td>
+        <td>English</td>
+        <td class="num">${r.engVol.toLocaleString()}</td>
+        <td class="num">$${r.engSpend.toFixed(2)}</td>
+      </tr>`;
+    if (r.spaVol > 0) rows += `
+      <tr>
+        <td>${r.state}</td>
+        <td>Spanish</td>
+        <td class="num">${r.spaVol.toLocaleString()}</td>
+        <td class="num">$${r.spaSpend.toFixed(2)}</td>
+      </tr>`;
+    return rows;
+  }).join('');
+
+  // Footer totals
+  document.getElementById('result-foot').innerHTML = `
+    <tr class="tfoot-row">
+      <td colspan="2"><strong>TOTAL</strong></td>
+      <td class="num">${fmtN(totVol)}</td>
+      <td class="num">${fmt$(totSpend)}</td>
+    </tr>
+  `;
+}
+
+// ── Copy Table ────────────────────────────────────────────
+function copyTable() {
+  const headers = ['State','Language','Volume','Spend'];
+  const lines = [headers.join('\t')];
+  reportRows.forEach(r => {
+    if (r.engVol > 0) lines.push([r.state, 'English', r.engVol, r.engSpend.toFixed(2)].join('\t'));
+    if (r.spaVol > 0) lines.push([r.state, 'Spanish', r.spaVol, r.spaSpend.toFixed(2)].join('\t'));
+  });
+  const totVol   = reportRows.reduce((s,r)=>s+r.totalVol,0);
+  const totSpend = reportRows.reduce((s,r)=>s+r.totalSpend,0);
+  lines.push(['TOTAL','', totVol, totSpend.toFixed(2)].join('\t'));
+
+  navigator.clipboard.writeText(lines.join('\n')).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = '✓ Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '⎘ Copy Table'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+// ── Download CSV ──────────────────────────────────────────
+function downloadCSV() {
+  const headers = ['State','Language','Volume','Spend'];
+  const rows = [headers];
+  reportRows.forEach(r => {
+    if (r.engVol > 0) rows.push([r.state, 'English', r.engVol, r.engSpend.toFixed(2)]);
+    if (r.spaVol > 0) rows.push([r.state, 'Spanish', r.spaVol, r.spaSpend.toFixed(2)]);
+  });
+  const totVol   = reportRows.reduce((s,r)=>s+r.totalVol,0);
+  const totSpend = reportRows.reduce((s,r)=>s+r.totalSpend,0);
+  rows.push(['TOTAL','', totVol, totSpend.toFixed(2)]);
+
+  const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const month = document.getElementById('report-month').value;
+  const year = document.getElementById('report-year').value;
+  a.href = url; a.download = `MVC_Monthly_Report_${month}_${year}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ── Formatters ────────────────────────────────────────────
+function fmt$(n) {
+  if (n >= 1000000) return '$' + (n/1000000).toFixed(2) + 'M';
+  if (n >= 1000) return '$' + (n/1000).toFixed(1) + 'K';
+  return '$' + n.toFixed(2);
+}
+function fmtN(n) {
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+  return n.toLocaleString();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MVC Campaign Split & Spend</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0d14;
+    --surface: #111520;
+    --surface2: #161c2d;
+    --border: #1e2a45;
+    --accent: #3d7fff;
+    --accent2: #00e5c3;
+    --accent3: #ff6b4a;
+    --text: #e8edf8;
+    --text-muted: #6b7a99;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Syne', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  .header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 16px 32px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .header h1 { font-size: 17px; font-weight: 800; letter-spacing: -0.5px; }
+  .header span { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; display: block; margin-bottom: 2px; }
+  .reset-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+    padding: 8px 14px; border-radius: 6px; font-family: 'DM Mono', monospace; font-size: 11px;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .reset-btn:hover { border-color: var(--accent3); color: var(--accent3); }
+
+  /* UPLOAD */
+  #upload-zone {
+    display: flex; align-items: center; justify-content: center;
+    min-height: calc(100vh - 65px); padding: 40px;
+  }
+  .drop-card {
+    border: 2px dashed var(--border); border-radius: 16px; padding: 60px 48px;
+    text-align: center; cursor: pointer; transition: all 0.3s; max-width: 480px; width: 100%;
+    background: var(--surface);
+  }
+  .drop-card:hover, .drop-card.drag-over { border-color: var(--accent2); background: var(--surface2); }
+  .drop-icon { font-size: 44px; margin-bottom: 18px; display: block; }
+  .drop-card h2 { font-size: 20px; font-weight: 700; margin-bottom: 10px; }
+  .drop-card p { color: var(--text-muted); font-size: 13px; font-family: 'DM Mono', monospace; line-height: 1.6; }
+  .tag { display: inline-block; background: var(--surface2); border: 1px solid var(--border); padding: 3px 8px; border-radius: 4px; font-family: 'DM Mono', monospace; font-size: 10px; color: var(--accent2); margin-top: 14px; }
+  #file-input { display: none; }
+
+  /* MAIN PANEL */
+  #main-panel { display: none; max-width: 1000px; margin: 0 auto; padding: 32px; }
+  .panel-title { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
+  .panel-sub { color: var(--text-muted); font-family: 'DM Mono', monospace; font-size: 12px; margin-bottom: 24px; line-height: 1.6; }
+  .file-badge { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 14px; font-family: 'DM Mono', monospace; font-size: 12px; color: var(--accent2); margin-bottom: 24px; display: inline-block; }
+
+  /* MONTH SELECT + TOTAL */
+  .top-row { display: flex; gap: 14px; align-items: flex-end; margin-bottom: 28px; flex-wrap: wrap; }
+  .ctrl-group { display: flex; flex-direction: column; gap: 6px; }
+  .ctrl-group label { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); }
+  select {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 12px; border-radius: 6px; font-family: 'DM Mono', monospace; font-size: 13px;
+    outline: none; transition: border-color 0.2s; min-width: 160px;
+  }
+  select:focus { border-color: var(--accent2); }
+
+  .total-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 20px; flex: 1; min-width: 200px;
+  }
+  .total-card-label { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+  .total-card-val { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; color: var(--accent2); }
+
+  /* CAMPAIGN CARDS */
+  .camp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 28px; }
+  .camp-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; position: relative; overflow: hidden; }
+  .camp-card::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+  .camp-card.eng::after { background: var(--accent); }
+  .camp-card.spa::after { background: var(--accent2); }
+  .camp-card.multi-eng::after { background: #a855f7; }
+  .camp-card.multi-spa::after { background: var(--accent3); }
+  .camp-card-type { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+  .camp-card-name { font-size: 14px; font-weight: 700; margin-bottom: 14px; color: var(--text); }
+  .camp-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .camp-row select { width: 100%; min-width: 0; }
+
+  /* RESULTS TABLE */
+  #results-panel { display: none; }
+  .results-title { font-size: 18px; font-weight: 800; margin-bottom: 16px; }
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead { background: var(--surface2); border-bottom: 1px solid var(--border); }
+  th { padding: 11px 16px; text-align: left; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); font-weight: 500; white-space: nowrap; }
+  th.num { text-align: right; }
+  td { padding: 10px 16px; border-bottom: 1px solid rgba(30,42,69,0.5); font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text); white-space: nowrap; }
+  td.num { text-align: right; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .tfoot-row td { background: var(--surface2); font-weight: 700; color: var(--accent2); border-top: 1px solid var(--border); }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+  .badge-eng { background: rgba(61,127,255,0.15); color: #3d7fff; border: 1px solid rgba(61,127,255,0.3); }
+  .badge-spa { background: rgba(0,229,195,0.12); color: #00e5c3; border: 1px solid rgba(0,229,195,0.25); }
+  .badge-multi-eng { background: rgba(168,85,247,0.12); color: #a855f7; border: 1px solid rgba(168,85,247,0.25); }
+  .badge-multi-spa { background: rgba(255,107,74,0.12); color: #ff6b4a; border: 1px solid rgba(255,107,74,0.25); }
+
+  @media (max-width: 700px) {
+    .camp-grid { grid-template-columns: 1fr; }
+    .camp-row { grid-template-columns: 1fr; }
+    #main-panel { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <span>Metro Vein Centers</span>
+    <h1>Campaign Split & Spend</h1>
+  </div>
+  <button class="reset-btn" onclick="resetAll()">↩ Upload New File</button>
+</div>
+
+<input type="file" id="file-input" accept=".csv">
+
+<!-- STEP 1: UPLOAD -->
+<div id="upload-zone">
+  <div class="drop-card" id="drop-area">
+    <span class="drop-icon">📂</span>
+    <h2>Upload State Projections CSV</h2>
+    <p>Export the CSV from the MVC State Projections tool, then drop it here to split volume by campaign and calculate spend.</p>
+    <span class="tag">.CSV</span>
+  </div>
+</div>
+
+<!-- STEP 2: MAIN -->
+<div id="main-panel">
+  <div class="panel-title">Select a Month</div>
+  <div class="panel-sub">Choose a projected (or actual) month to pull the all-state total volume from.</div>
+  <div class="file-badge" id="csv-filename">—</div>
+
+  <div class="top-row">
+    <div class="ctrl-group">
+      <label>Month</label>
+      <select id="month-select" onchange="onMonthChange()"></select>
+    </div>
+    <div class="total-card">
+      <div class="total-card-label">Total Volume (All States, Eng + Spa)</div>
+      <div class="total-card-val" id="grand-total-val">0</div>
+    </div>
+  </div>
+
+  <div class="panel-title">Campaign Split Settings</div>
+  <div class="panel-sub">For each campaign type, choose the per-send quantity tier, send frequency, and number of sends. Volume is split proportionally so the 4 campaigns always add up to the total above.</div>
+
+  <div class="camp-grid">
+    <div class="camp-card eng">
+      <div class="camp-card-type">Retargeting</div>
+      <div class="camp-card-name">English</div>
+      <div class="camp-row">
+        <select id="tier-eng-r" onchange="calc()"></select>
+        <select id="freq-eng-r" onchange="calc()">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+        </select>
+        <select id="num-eng-r" onchange="calc()"></select>
+      </div>
+    </div>
+    <div class="camp-card spa">
+      <div class="camp-card-type">Retargeting</div>
+      <div class="camp-card-name">Spanish</div>
+      <div class="camp-row">
+        <select id="tier-spa-r" onchange="calc()"></select>
+        <select id="freq-spa-r" onchange="calc()">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+        </select>
+        <select id="num-spa-r" onchange="calc()"></select>
+      </div>
+    </div>
+    <div class="camp-card multi-eng">
+      <div class="camp-card-type">Multi Touch</div>
+      <div class="camp-card-name">English</div>
+      <div class="camp-row">
+        <select id="tier-eng-m" onchange="calc()"></select>
+        <select id="freq-eng-m" onchange="calc()">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+        </select>
+        <select id="num-eng-m" onchange="calc()"></select>
+      </div>
+    </div>
+    <div class="camp-card multi-spa">
+      <div class="camp-card-type">Multi Touch</div>
+      <div class="camp-card-name">Spanish</div>
+      <div class="camp-row">
+        <select id="tier-spa-m" onchange="calc()"></select>
+        <select id="freq-spa-m" onchange="calc()">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+        </select>
+        <select id="num-spa-m" onchange="calc()"></select>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3: RESULTS -->
+  <div id="results-panel">
+    <div class="results-header" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
+      <div class="results-title" style="margin-bottom:0;">Volume & Spend by Campaign</div>
+      <button class="dl-btn" onclick="downloadCSV()" style="background: transparent; border: 1px solid var(--accent2); color: var(--accent2); padding: 8px 16px; border-radius: 6px; font-family: 'DM Mono', monospace; font-size: 11px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='var(--accent2)';this.style.color='#0a0d14'" onmouseout="this.style.background='transparent';this.style.color='var(--accent2)'">↓ Download CSV</button>
+    </div>
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table id="result-table">
+          <thead>
+            <tr>
+              <th>Campaign</th>
+              <th class="num">Tier</th>
+              <th class="num">Frequency</th>
+              <th class="num">Sends</th>
+              <th class="num">Volume / Send</th>
+              <th class="num">Volume</th>
+              <th class="num">$ / Piece</th>
+              <th class="num">Spend</th>
+            </tr>
+          </thead>
+          <tbody id="result-body"></tbody>
+          <tfoot id="result-foot"></tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Pricing table (Quantity Tier -> $/piece, includes +$0.06 data fee) ──
+const PRICE_TABLE = {
+  500:   0.7497,
+  1000:  0.7354,
+  2500:  0.7289,
+  5000:  0.7326
+};
+const TIERS = Object.keys(PRICE_TABLE).map(Number).sort((a,b)=>a-b);
+
+const CAMPAIGNS = [
+  { key: 'eng-r',  label: 'English Retargeting', badge: 'badge-eng' },
+  { key: 'spa-r',  label: 'Spanish Retargeting', badge: 'badge-spa' },
+  { key: 'eng-m',  label: 'English Multi Touch', badge: 'badge-multi-eng' },
+  { key: 'spa-m',  label: 'Spanish Multi Touch', badge: 'badge-multi-spa' }
+];
+
+let parsedRows = [];
+
+// ── Drag & Drop / Click ───────────────────────────────────
+const dropArea = document.getElementById('drop-area');
+dropArea.addEventListener('click', () => document.getElementById('file-input').click());
+dropArea.addEventListener('dragover', e => { e.preventDefault(); dropArea.classList.add('drag-over'); });
+dropArea.addEventListener('dragleave', () => dropArea.classList.remove('drag-over'));
+dropArea.addEventListener('drop', e => {
+  e.preventDefault(); dropArea.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+document.getElementById('file-input').addEventListener('change', e => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+function loadFile(file) {
+  document.getElementById('csv-filename').textContent = '📄 ' + file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const result = Papa.parse(e.target.result, { header: true, skipEmptyLines: true, dynamicTyping: true });
+    parsedRows = result.data.filter(r => r.Month && r.Total !== undefined);
+
+    populateMonthSelect();
+    populateTierSelects();
+    populateNumberSelects();
+
+    document.getElementById('upload-zone').style.display = 'none';
+    document.getElementById('main-panel').style.display = 'block';
+
+    onMonthChange();
+  };
+  reader.readAsText(file);
+}
+
+function resetAll() {
+  parsedRows = [];
+  document.getElementById('file-input').value = '';
+  document.getElementById('upload-zone').style.display = 'flex';
+  document.getElementById('main-panel').style.display = 'none';
+  document.getElementById('results-panel').style.display = 'none';
+}
+
+// ── Populate dropdowns ────────────────────────────────────
+function populateMonthSelect() {
+  const sel = document.getElementById('month-select');
+  sel.innerHTML = '';
+  parsedRows.forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r.Month;
+    opt.textContent = `${r.Month} (${r.Type})`;
+    sel.appendChild(opt);
+  });
+  // Default to last row (most recent / furthest projected month)
+  sel.selectedIndex = parsedRows.length - 1;
+}
+
+function populateTierSelects() {
+  CAMPAIGNS.forEach(c => {
+    const sel = document.getElementById('tier-' + c.key);
+    sel.innerHTML = '';
+    TIERS.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t;
+      opt.textContent = `${t.toLocaleString()} (${fmt$(PRICE_TABLE[t])})`;
+      sel.appendChild(opt);
+    });
+  });
+}
+
+function populateNumberSelects() {
+  CAMPAIGNS.forEach(c => {
+    const sel = document.getElementById('num-' + c.key);
+    sel.innerHTML = '';
+    for (let i = 1; i <= 31; i++) {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = i;
+      sel.appendChild(opt);
+    }
+    sel.value = 4; // sensible default
+  });
+}
+
+function onMonthChange() {
+  calc();
+}
+
+function getGrandTotal() {
+  const month = document.getElementById('month-select').value;
+  const row = parsedRows.find(r => r.Month === month);
+  return row ? Number(row.Total) || 0 : 0;
+}
+
+// ── Core calculation ──────────────────────────────────────
+function calc() {
+  const grandTotal = getGrandTotal();
+  document.getElementById('grand-total-val').textContent = fmtN(grandTotal);
+
+  // raw weight per campaign = tier (per-send volume) * number of sends
+  const raws = CAMPAIGNS.map(c => {
+    const tier = Number(document.getElementById('tier-' + c.key).value);
+    const num  = Number(document.getElementById('num-' + c.key).value);
+    return tier * num;
+  });
+  const rawSum = raws.reduce((a,b) => a + b, 0);
+
+  const results = CAMPAIGNS.map((c, i) => {
+    const tier = Number(document.getElementById('tier-' + c.key).value);
+    const freq = document.getElementById('freq-' + c.key).value;
+    const num  = Number(document.getElementById('num-' + c.key).value);
+    const ppp  = PRICE_TABLE[tier];
+    const volume = rawSum > 0 ? grandTotal * (raws[i] / rawSum) : 0;
+    const spend = volume * ppp;
+    return { ...c, tier, freq, num, ppp, volume, spend };
+  });
+
+  renderResults(results, grandTotal);
+}
+
+function renderResults(results, grandTotal) {
+  lastResults = results;
+  lastGrandTotal = grandTotal;
+  lastMonth = document.getElementById('month-select').value;
+  document.getElementById('results-panel').style.display = 'block';
+
+  document.getElementById('result-body').innerHTML = results.map(r => `
+    <tr>
+      <td><span class="badge ${r.badge}">${r.label}</span></td>
+      <td class="num">${r.tier.toLocaleString()}</td>
+      <td class="num">${r.freq === 'daily' ? 'Daily' : 'Weekly'}</td>
+      <td class="num">${r.num}</td>
+      <td class="num">${fmt0(r.volume / r.num)}</td>
+      <td class="num">${fmt0(r.volume)}</td>
+      <td class="num">${fmt$(r.ppp)}</td>
+      <td class="num">${fmt$$(r.spend)}</td>
+    </tr>
+  `).join('');
+
+  const totVolume = results.reduce((s,r) => s + r.volume, 0);
+  const totSpend  = results.reduce((s,r) => s + r.spend, 0);
+
+  document.getElementById('result-foot').innerHTML = `
+    <tr class="tfoot-row">
+      <td colspan="5"><strong>TOTAL</strong></td>
+      <td class="num">${fmt0(totVolume)}</td>
+      <td class="num"></td>
+      <td class="num">${fmt$$(totSpend)}</td>
+    </tr>
+  `;
+}
+
+// ── Download CSV ──────────────────────────────────────────
+let lastResults = [];
+let lastGrandTotal = 0;
+let lastMonth = '';
+
+function downloadCSV() {
+  const headers = ['Campaign','Tier','Frequency','Sends','Volume / Send','Volume','$ / Piece','Spend'];
+  const rows = [headers];
+  lastResults.forEach(r => {
+    rows.push([r.label, r.tier, r.freq === 'daily' ? 'Daily' : 'Weekly', r.num, fmt0(r.volume / r.num), fmt0(r.volume), r.ppp.toFixed(4), r.spend.toFixed(2)]);
+  });
+  const totVolume = lastResults.reduce((s,r) => s + r.volume, 0);
+  const totSpend  = lastResults.reduce((s,r) => s + r.spend, 0);
+  rows.push(['TOTAL','','','','', fmt0(totVolume), '', totSpend.toFixed(2)]);
+
+  const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `MVC_Campaign_Split_${lastMonth}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ── Formatters ────────────────────────────────────────────
+function fmt$(n) { return '$' + n.toFixed(4); }
+function fmt$$(n) {
+  if (n >= 1000000) return '$' + (n/1000000).toFixed(2) + 'M';
+  if (n >= 1000) return '$' + (n/1000).toFixed(1) + 'K';
+  return '$' + n.toFixed(2);
+}
+function fmtN(n) {
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+  return Math.round(n).toLocaleString();
+}
+function fmt0(n) { return Math.round(n).toLocaleString(); }
+</script>
+</body>
+</html>
