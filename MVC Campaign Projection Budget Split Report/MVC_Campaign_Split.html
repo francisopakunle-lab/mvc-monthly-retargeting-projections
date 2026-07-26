@@ -235,6 +235,7 @@
         </table>
       </div>
     </div>
+    <div id="result-note" style="margin-top:10px; font-family:'DM Mono', monospace; font-size:11px; color:var(--text-muted); line-height:1.5;"></div>
   </div>
 </div>
 
@@ -366,9 +367,14 @@ function calc() {
     const freq = document.getElementById('freq-' + c.key).value;
     const num  = Number(document.getElementById('num-' + c.key).value);
     const ppp  = PRICE_TABLE[tier];
-    const volume = rawSum > 0 ? grandTotal * (raws[i] / rawSum) : 0;
+    const rawVolume = rawSum > 0 ? grandTotal * (raws[i] / rawSum) : 0;
+    // Round Volume/Send to a whole number first, then derive Volume from it
+    // (Sends x Volume/Send) so the displayed figures are always internally
+    // consistent, and Spend is calculated from that same whole-number Volume.
+    const volPerSend = Math.round(rawVolume / num);
+    const volume = volPerSend * num;
     const spend = volume * ppp;
-    return { ...c, tier, freq, num, ppp, volume, spend };
+    return { ...c, tier, freq, num, ppp, rawVolume, volPerSend, volume, spend };
   });
 
   renderResults(results, grandTotal);
@@ -386,8 +392,8 @@ function renderResults(results, grandTotal) {
       <td class="num">${r.tier.toLocaleString()}</td>
       <td class="num">${r.freq === 'daily' ? 'Daily' : 'Weekly'}</td>
       <td class="num">${r.num}</td>
-      <td class="num">${fmt0(r.volume / r.num)}</td>
-      <td class="num">${fmt0(r.volume)}</td>
+      <td class="num" title="Unrounded: ${fmt2(r.rawVolume / r.num)}">${r.volPerSend.toLocaleString()}</td>
+      <td class="num" title="Unrounded: ${fmt2(r.rawVolume)}">${fmt0(r.volume)}</td>
       <td class="num">${fmt$(r.ppp)}</td>
       <td class="num">${fmt$$(r.spend)}</td>
     </tr>
@@ -404,6 +410,11 @@ function renderResults(results, grandTotal) {
       <td class="num">${fmt$$(totSpend)}</td>
     </tr>
   `;
+
+  const noteEl = document.getElementById('result-note');
+  if (noteEl) {
+    noteEl.textContent = 'Volume and Volume / Send are rounded to whole numbers, and Spend is calculated directly from those rounded figures (hover a cell to see the unrounded value).';
+  }
 }
 
 // ── Download CSV ──────────────────────────────────────────
@@ -415,7 +426,7 @@ function downloadCSV() {
   const headers = ['Campaign','Tier','Frequency','Sends','Volume / Send','Volume','$ / Piece','Spend'];
   const rows = [headers];
   lastResults.forEach(r => {
-    rows.push([r.label, r.tier, r.freq === 'daily' ? 'Daily' : 'Weekly', r.num, fmt0(r.volume / r.num), fmt0(r.volume), r.ppp.toFixed(4), r.spend.toFixed(2)]);
+    rows.push([r.label, r.tier, r.freq === 'daily' ? 'Daily' : 'Weekly', r.num, r.volPerSend, fmt0(r.volume), r.ppp.toFixed(4), r.spend.toFixed(2)]);
   });
   const totVolume = lastResults.reduce((s,r) => s + r.volume, 0);
   const totSpend  = lastResults.reduce((s,r) => s + r.spend, 0);
@@ -442,6 +453,7 @@ function fmtN(n) {
   return Math.round(n).toLocaleString();
 }
 function fmt0(n) { return Math.round(n).toLocaleString(); }
+function fmt2(n) { return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 </script>
 </body>
 </html>
