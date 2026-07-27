@@ -226,6 +226,7 @@
               <th class="num">Sends</th>
               <th class="num">Volume / Send</th>
               <th class="num">Volume</th>
+              <th class="num" title="Rounded so all 4 campaigns sum exactly to the CSV's total volume for the month. Reference only — not used to calculate Spend.">Volume (Proj Total)</th>
               <th class="num">$ / Piece</th>
               <th class="num">Spend</th>
             </tr>
@@ -256,6 +257,31 @@ const CAMPAIGNS = [
   { key: 'spa-m',  label: 'Spanish Multi Touch', badge: 'badge-multi-spa' }
 ];
 
+// ── Platform License ID ────────────────────────────────────
+const LICENSE_IDS = ['006PQ00000WEAI1YAP'];
+const LICENSE_KEY = 'mvc_platform_license_id_v1';
+
+function populateLicenseSelect() {
+  const sel = document.getElementById('platform-license-select');
+  if (!sel) return;
+  sel.innerHTML = '';
+  LICENSE_IDS.forEach(id => {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = id;
+    sel.appendChild(opt);
+  });
+  let saved = null;
+  try { saved = localStorage.getItem(LICENSE_KEY); } catch (e) { /* ignore */ }
+  if (saved && LICENSE_IDS.includes(saved)) sel.value = saved;
+}
+
+function saveLicenseSelection() {
+  const sel = document.getElementById('platform-license-select');
+  if (!sel) return;
+  try { localStorage.setItem(LICENSE_KEY, sel.value); } catch (e) { /* ignore */ }
+}
+
 let parsedRows = [];
 
 // ── Drag & Drop / Click ───────────────────────────────────
@@ -281,6 +307,7 @@ function loadFile(file) {
     populateMonthSelect();
     populateTierSelects();
     populateNumberSelects();
+    applySavedSettings();
 
     document.getElementById('upload-zone').style.display = 'none';
     document.getElementById('main-panel').style.display = 'block';
@@ -343,14 +370,68 @@ function onMonthChange() {
   calc();
 }
 
+// ── Remember Tier / Frequency / Sends across CSV uploads ───
+const SETTINGS_KEY = 'mvc_campaign_settings_v1';
+
+function saveSettings() {
+  const settings = {};
+  CAMPAIGNS.forEach(c => {
+    settings[c.key] = {
+      tier: document.getElementById('tier-' + c.key).value,
+      freq: document.getElementById('freq-' + c.key).value,
+      num:  document.getElementById('num-' + c.key).value
+    };
+  });
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* ignore */ }
+}
+
+function loadSavedSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
+function applySavedSettings() {
+  const saved = loadSavedSettings();
+  if (!saved) return;
+  CAMPAIGNS.forEach(c => {
+    const s = saved[c.key];
+    if (!s) return;
+    const tierSel = document.getElementById('tier-' + c.key);
+    const freqSel = document.getElementById('freq-' + c.key);
+    const numSel  = document.getElementById('num-' + c.key);
+    if (s.tier && Array.from(tierSel.options).some(o => o.value === String(s.tier))) tierSel.value = s.tier;
+    if (s.freq && Array.from(freqSel.options).some(o => o.value === s.freq)) freqSel.value = s.freq;
+    if (s.num  && Array.from(numSel.options).some(o => o.value === String(s.num)))  numSel.value = s.num;
+  });
+}
+
 function getGrandTotal() {
   const month = document.getElementById('month-select').value;
   const row = parsedRows.find(r => r.Month === month);
   return row ? Number(row.Total) || 0 : 0;
 }
 
+// Largest-remainder (Hamilton) apportionment: rounds a list of values to
+// whole numbers such that they always sum to exactly `total`, by rounding
+// down everywhere and handing the leftover units to whichever values had
+// the largest fractional remainder.
+function apportionLargestRemainder(values, total) {
+  const floors = values.map(v => Math.floor(v));
+  const remainders = values.map((v, i) => v - floors[i]);
+  let leftover = Math.round(total - floors.reduce((a, b) => a + b, 0));
+  const order = remainders.map((r, i) => i).sort((a, b) => remainders[b] - remainders[a]);
+  const result = floors.slice();
+  for (let i = 0; i < order.length && leftover > 0; i++, leftover--) {
+    result[order[i]] += 1;
+  }
+  return result;
+}
+
 // ── Core calculation ──────────────────────────────────────
 function calc() {
+  saveSettings();
   const grandTotal = getGrandTotal();
   document.getElementById('grand-total-val').textContent = fmtN(grandTotal);
 
@@ -369,13 +450,18 @@ function calc() {
     const ppp  = PRICE_TABLE[tier];
     const rawVolume = rawSum > 0 ? grandTotal * (raws[i] / rawSum) : 0;
     // Round Volume/Send to a whole number first, then derive Volume from it
-    // (Sends x Volume/Send) so the displayed figures are always internally
-    // consistent, and Spend is calculated from that same whole-number Volume.
+    // (Sends x Volume/Send), so Volume/Send -> Volume -> Spend always tie
+    // out exactly for each row.
     const volPerSend = Math.round(rawVolume / num);
     const volume = volPerSend * num;
     const spend = volume * ppp;
     return { ...c, tier, freq, num, ppp, rawVolume, volPerSend, volume, spend };
   });
+
+  // Reference-only column: the true volumes, apportioned so the 4 campaigns
+  // sum to exactly the CSV's grand total. Not used to calculate Spend.
+  const csvVolumes = apportionLargestRemainder(results.map(r => r.rawVolume), grandTotal);
+  results.forEach((r, i) => { r.csvVolume = csvVolumes[i]; });
 
   renderResults(results, grandTotal);
 }
@@ -394,26 +480,38 @@ function renderResults(results, grandTotal) {
       <td class="num">${r.num}</td>
       <td class="num" title="Unrounded: ${fmt2(r.rawVolume / r.num)}">${r.volPerSend.toLocaleString()}</td>
       <td class="num" title="Unrounded: ${fmt2(r.rawVolume)}">${fmt0(r.volume)}</td>
+      <td class="num" title="Unrounded: ${fmt2(r.rawVolume)}">${r.csvVolume.toLocaleString()}</td>
       <td class="num">${fmt$(r.ppp)}</td>
       <td class="num">${fmt$$(r.spend)}</td>
     </tr>
   `).join('');
 
   const totVolume = results.reduce((s,r) => s + r.volume, 0);
+  const totCsvVolume = results.reduce((s,r) => s + r.csvVolume, 0);
   const totSpend  = results.reduce((s,r) => s + r.spend, 0);
 
   document.getElementById('result-foot').innerHTML = `
     <tr class="tfoot-row">
       <td colspan="5"><strong>TOTAL</strong></td>
       <td class="num">${fmt0(totVolume)}</td>
+      <td class="num">${totCsvVolume.toLocaleString()}</td>
       <td class="num"></td>
       <td class="num">${fmt$$(totSpend)}</td>
     </tr>
+    <tr class="tfoot-row">
+      <td colspan="9" style="padding-top:14px; padding-bottom:14px;">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <span style="font-family:'DM Mono', monospace; font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:var(--text-muted);">Platform License ID</span>
+          <select id="platform-license-select" onchange="saveLicenseSelection()" style="min-width:220px;"></select>
+        </div>
+      </td>
+    </tr>
   `;
+  populateLicenseSelect();
 
   const noteEl = document.getElementById('result-note');
   if (noteEl) {
-    noteEl.textContent = 'Volume and Volume / Send are rounded to whole numbers, and Spend is calculated directly from those rounded figures (hover a cell to see the unrounded value).';
+    noteEl.textContent = 'Volume and Volume / Send are rounded to whole numbers, and Spend is calculated directly from those rounded figures. Volume (Proj Total) is shown for reference only, apportioned so the 4 campaigns always add up to the CSV\'s exact monthly total (hover a cell to see the unrounded value).';
   }
 }
 
@@ -423,14 +521,19 @@ let lastGrandTotal = 0;
 let lastMonth = '';
 
 function downloadCSV() {
-  const headers = ['Campaign','Tier','Frequency','Sends','Volume / Send','Volume','$ / Piece','Spend'];
+  const headers = ['Campaign','Tier','Frequency','Sends','Volume / Send','Volume','Volume (Proj Total)','$ / Piece','Spend'];
   const rows = [headers];
   lastResults.forEach(r => {
-    rows.push([r.label, r.tier, r.freq === 'daily' ? 'Daily' : 'Weekly', r.num, r.volPerSend, fmt0(r.volume), r.ppp.toFixed(4), r.spend.toFixed(2)]);
+    rows.push([r.label, r.tier, r.freq === 'daily' ? 'Daily' : 'Weekly', r.num, r.volPerSend, fmt0(r.volume), r.csvVolume, r.ppp.toFixed(4), r.spend.toFixed(2)]);
   });
   const totVolume = lastResults.reduce((s,r) => s + r.volume, 0);
+  const totCsvVolume = lastResults.reduce((s,r) => s + r.csvVolume, 0);
   const totSpend  = lastResults.reduce((s,r) => s + r.spend, 0);
-  rows.push(['TOTAL','','','','', fmt0(totVolume), '', totSpend.toFixed(2)]);
+  rows.push(['TOTAL','','','','', fmt0(totVolume), totCsvVolume, '', totSpend.toFixed(2)]);
+
+  const licenseSel = document.getElementById('platform-license-select');
+  rows.push([]);
+  rows.push(['Platform License ID', licenseSel ? licenseSel.value : '']);
 
   const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
