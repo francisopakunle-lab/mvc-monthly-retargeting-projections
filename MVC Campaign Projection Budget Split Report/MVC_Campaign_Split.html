@@ -449,11 +449,12 @@ function calc() {
     const num  = Number(document.getElementById('num-' + c.key).value);
     const ppp  = PRICE_TABLE[tier];
     const rawVolume = rawSum > 0 ? grandTotal * (raws[i] / rawSum) : 0;
-    // Round Volume/Send to a whole number first, then derive Volume from it
-    // (Sends x Volume/Send), so Volume/Send -> Volume -> Spend always tie
-    // out exactly for each row.
+    // Volume and Volume/Send are each rounded independently to the nearest
+    // whole number (so Volume moves in single-unit steps rather than in
+    // increments of Sends). Spend is calculated from this rounded Volume.
+    // Note: Sends x Volume/Send will not always equal Volume exactly.
     const volPerSend = Math.round(rawVolume / num);
-    const volume = volPerSend * num;
+    const volume = Math.round(rawVolume);
     const spend = volume * ppp;
     return { ...c, tier, freq, num, ppp, rawVolume, volPerSend, volume, spend };
   });
@@ -511,7 +512,7 @@ function renderResults(results, grandTotal) {
 
   const noteEl = document.getElementById('result-note');
   if (noteEl) {
-    noteEl.textContent = 'Volume and Volume / Send are rounded to whole numbers, and Spend is calculated directly from those rounded figures. Volume (Proj Total) is shown for reference only, apportioned so the 4 campaigns always add up to the CSV\'s exact monthly total (hover a cell to see the unrounded value).';
+    noteEl.textContent = 'Volume and Volume / Send are each rounded independently to whole numbers, so Sends × Volume / Send will not always equal Volume exactly. Spend is calculated directly from Volume. Volume (Proj Total) is shown for reference only, apportioned so the 4 campaigns always add up to the CSV\'s exact monthly total (hover a cell to see the unrounded value).';
   }
 }
 
