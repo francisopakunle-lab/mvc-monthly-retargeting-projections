@@ -233,7 +233,7 @@
       </div>
     </div>
     <div class="modal-footer">
-      <label><input type="checkbox" id="chkOverwrite" checked> Overwrite existing months with uploaded values</label>
+      <span id="uploadSelectionCount" style="font-size:12px;color:#555;"></span>
       <button class="btn btn-secondary" id="btnCancelUpload" onclick="closeUploadModal()">Cancel</button>
       <button class="btn btn-primary" id="btnConfirmUpload" style="display:none" onclick="confirmUpload()">✓ Import Data</button>
     </div>
@@ -281,9 +281,10 @@ var pendingUpload = null;
 var BAKED_DATA = {"overrides":{"2026-08":{"CT":5502,"MI":8494,"NJ":15201,"NY":0,"TX":27055,"AZ":7349,"PA":1000,"IL":4000},"2026-09":{"IL":3026,"CT":4402,"MI":7663,"NJ":12304,"TX":22803,"AZ":5317,"PA":500,"NY":1000}},"finalized":{},"uploaded":{"2026-05":{"CT":5273,"MI":7958,"NJ":12876,"NY":724,"TX":25246,"AZ":6707,"PA":415}}}; /* BAKED_DATA_PLACEHOLDER */
 if (BAKED_DATA) {
   try {
-    if (BAKED_DATA.overrides) localStorage.setItem('mvc_overrides', JSON.stringify(BAKED_DATA.overrides));
-    if (BAKED_DATA.finalized) localStorage.setItem('mvc_finalized', JSON.stringify(BAKED_DATA.finalized));
-    if (BAKED_DATA.uploaded)  localStorage.setItem('mvc_uploaded',  JSON.stringify(BAKED_DATA.uploaded));
+    if (BAKED_DATA.overrides)        localStorage.setItem('mvc_overrides',        JSON.stringify(BAKED_DATA.overrides));
+    if (BAKED_DATA.finalized)        localStorage.setItem('mvc_finalized',        JSON.stringify(BAKED_DATA.finalized));
+    if (BAKED_DATA.uploaded)         localStorage.setItem('mvc_uploaded',         JSON.stringify(BAKED_DATA.uploaded));
+    if (BAKED_DATA.uploadFinalized)  localStorage.setItem('mvc_upload_finalized', JSON.stringify(BAKED_DATA.uploadFinalized));
   } catch(e) { console.warn('[MVC] Could not restore baked data', e); }
 }
 
@@ -296,15 +297,18 @@ const ALL_STATES = ['CT','MI','NJ','NY','TX','AZ','PA','IL'];
 const MONTHS = Object.keys(RAW).sort();
 
 /* ── Persistent stores (survive page refresh via localStorage) ── */
-const LS_OVERRIDES = 'mvc_overrides';
-const LS_FINALIZED = 'mvc_finalized';
-const LS_UPLOADED  = 'mvc_uploaded';
+const LS_OVERRIDES         = 'mvc_overrides';
+const LS_FINALIZED         = 'mvc_finalized';
+const LS_UPLOADED          = 'mvc_uploaded';
+const LS_UPLOAD_FINALIZED  = 'mvc_upload_finalized'; // months finalized via CSV upload (no Revert shown)
 
-let OVERRIDES = JSON.parse(localStorage.getItem(LS_OVERRIDES) || '{}');
-let FINALIZED  = JSON.parse(localStorage.getItem(LS_FINALIZED) || '{}');
-let UPLOADED   = JSON.parse(localStorage.getItem(LS_UPLOADED)  || '{}');  // months beyond RAW
+let OVERRIDES        = JSON.parse(localStorage.getItem(LS_OVERRIDES)        || '{}');
+let FINALIZED        = JSON.parse(localStorage.getItem(LS_FINALIZED)        || '{}');
+let UPLOADED         = JSON.parse(localStorage.getItem(LS_UPLOADED)         || '{}');
+let UPLOAD_FINALIZED = JSON.parse(localStorage.getItem(LS_UPLOAD_FINALIZED) || '[]'); // array of month strings
 
-function isFinalized(m) { return !!FINALIZED[m]; }
+function isFinalized(m)       { return !!FINALIZED[m]; }
+function isUploadFinalized(m) { return UPLOAD_FINALIZED.includes(m); }
 
 function finalizeMonth(m, projRaw) {
   FINALIZED[m] = {};
@@ -366,6 +370,8 @@ function resetAll() {
   localStorage.removeItem(LS_OVERRIDES);
   localStorage.removeItem(LS_FINALIZED);
   localStorage.removeItem(LS_UPLOADED);
+  localStorage.removeItem(LS_UPLOAD_FINALIZED);
+  UPLOAD_FINALIZED = [];
   updateEditBadge();
   render();
   toast('All edits and finalizations reset.');
@@ -650,7 +656,7 @@ function renderMonthly() {
       const prevM = allMonths[allMonths.indexOf(m)-1];
       const tr = tbody.insertRow();
       if (isProj) tr.className = 'projected';
-      if (isFin)  tr.className = 'finalized';
+      if (isFin && !isUploadFinalized(m)) tr.className = 'finalized';
 
       // Month label + action button
       const tdMonth = tr.insertCell();
@@ -659,7 +665,7 @@ function renderMonthly() {
         ALL_STATES.forEach(s => { snapVals[s] = getVal(m, s); });
         tdMonth.innerHTML = `<div class="cell-inner">★ ${m}<button class="btn-finalize">✓ Finalize</button></div>`;
         tdMonth.querySelector('.btn-finalize').addEventListener('click', () => finalizeMonth(m, snapVals));
-      } else if (isFin) {
+      } else if (isFin && !isUploadFinalized(m)) {
         tdMonth.innerHTML = `<div class="cell-inner">✓ ${m}<button class="btn-unfinalize">↺ Revert</button></div>`;
         tdMonth.querySelector('.btn-unfinalize').addEventListener('click', () => unfinalizeMonth(m));
       } else {
@@ -837,11 +843,9 @@ function renderSummaryCards(states, lastMonth, projRaw, projMonths, getVal, getT
     <div class="card hi"><div class="lbl">Total Mailed (All Time)</div><div class="val">${fmt(grandTotal)}</div><div class="sub">${states.join(', ')}</div></div>
     <div class="card"><div class="lbl">Last Month (${lastMonth})</div><div class="val">${fmt(lastTotal)}</div><div class="sub">MoM: ${mom>=0?'+':''}${mom.toFixed(1)}% vs ${prevMonth}</div></div>
     <div class="card"><div class="lbl">Top State</div><div class="val">${top}</div><div class="sub">${fmt(MONTHS.reduce((a,m)=>a+getData(m,top),0))} total</div></div>
-    ${fins>0
-      ? `<div class="card" style="background:#f0fdf4;border:1px solid #86efac"><div class="lbl" style="color:#166534">Finalized Months</div><div class="val" style="color:#166534">${fins}</div><div class="sub" style="color:#15803d">${Object.keys(FINALIZED).join(', ')}</div></div>`
-      : edits>0
-        ? `<div class="card amber"><div class="lbl">Active Edits</div><div class="val">${edits}</div><div class="sub">Projections updated live</div></div>`
-        : `<div class="card"><div class="lbl">Projected Next ${projMonths.length} Mo</div><div class="val">${projTotal>0?fmt(projTotal):'—'}</div><div class="sub">${projMonths.join(', ')}</div></div>`}
+    ${edits>0
+      ? `<div class="card amber"><div class="lbl">Active Edits</div><div class="val">${edits}</div><div class="sub">Projections updated live</div></div>`
+      : `<div class="card"><div class="lbl">Projected Next ${projMonths.length} Mo</div><div class="val">${projTotal>0?fmt(projTotal):'—'}</div><div class="sub">${projMonths.join(', ')}</div></div>`}
   `;
 }
 
@@ -888,9 +892,10 @@ function exportCSV() {
 function exportHTML() {
   try {
     const bakedData = {
-      overrides: JSON.parse(localStorage.getItem('mvc_overrides') || '{}'),
-      finalized: JSON.parse(localStorage.getItem('mvc_finalized') || '{}'),
-      uploaded:  JSON.parse(localStorage.getItem('mvc_uploaded')  || '{}')
+      overrides:       JSON.parse(localStorage.getItem('mvc_overrides')        || '{}'),
+      finalized:       JSON.parse(localStorage.getItem('mvc_finalized')        || '{}'),
+      uploaded:        JSON.parse(localStorage.getItem('mvc_uploaded')         || '{}'),
+      uploadFinalized: JSON.parse(localStorage.getItem('mvc_upload_finalized') || '[]')
     };
     const injection = 'var BAKED_DATA = ' + JSON.stringify(bakedData) + '; /* BAKED_DATA_PLACEHOLDER */';
     fetch(window.location.href)
@@ -1164,6 +1169,18 @@ function aggregateByMonth(rows) {
 }
 
 /* Show preview table in modal */
+function updateUploadSelectionCount() {
+  const boxes = document.querySelectorAll('.month-import-cb');
+  const checked = Array.from(boxes).filter(b => b.checked).length;
+  const el = document.getElementById('uploadSelectionCount');
+  if (el) el.textContent = `${checked} of ${boxes.length} month${boxes.length!==1?'s':''} selected`;
+}
+
+function toggleAllUploadMonths(checked) {
+  document.querySelectorAll('.month-import-cb').forEach(b => b.checked = checked);
+  updateUploadSelectionCount();
+}
+
 function showUploadPreview(parsed, filename) {
   const allActual = getAllActualMonths();
   const months = Object.keys(parsed).sort();
@@ -1180,52 +1197,75 @@ function showUploadPreview(parsed, filename) {
 
   document.getElementById('uploadStats').innerHTML = `
     <span class="stat-pill stat-new">✓ ${newMonths.length} new month${newMonths.length!==1?'s':''}</span>
-    <span class="stat-pill stat-update">↻ ${updateMonths.length} existing month${updateMonths.length!==1?'s':''} will update</span>
+    <span class="stat-pill stat-update">↻ ${updateMonths.length} existing month${updateMonths.length!==1?'s':''}</span>
     <span class="stat-pill stat-skip">📄 ${filename}</span>
   `;
 
+  // Header with select-all checkbox
   document.getElementById('previewHead').innerHTML =
-    `<th>Month</th>${ALL_STATES.map(s=>`<th>${s}</th>`).join('')}<th>Total</th>`;
+    `<th style="width:36px"><input type="checkbox" title="Select all" checked onchange="toggleAllUploadMonths(this.checked)"></th>
+     <th>Month</th>${ALL_STATES.map(s=>`<th>${s}</th>`).join('')}<th>Total</th>`;
 
+  // Rows: new months checked by default, existing months unchecked by default
   document.getElementById('previewBody').innerHTML = months.map(m => {
     const isNew = newMonths.includes(m);
     const total = ALL_STATES.reduce((a,s)=>a+(parsed[m][s]||0),0);
+    const checked = isNew ? 'checked' : '';
+    const badge = isNew
+      ? `<span style="font-size:10px;background:#dcfce7;color:#166534;border-radius:4px;padding:1px 5px;margin-left:4px">NEW</span>`
+      : `<span style="font-size:10px;background:#fef9c3;color:#854d0e;border-radius:4px;padding:1px 5px;margin-left:4px">UPDATE</span>`;
     return `<tr class="${isNew?'row-new':'row-update'}">
-      <td>${m}</td>
+      <td style="text-align:center"><input type="checkbox" class="month-import-cb" data-month="${m}" ${checked} onchange="updateUploadSelectionCount()"></td>
+      <td>${m}${badge}</td>
       ${ALL_STATES.map(s=>`<td>${(parsed[m][s]||0).toLocaleString()}</td>`).join('')}
       <td><strong>${total.toLocaleString()}</strong></td>
     </tr>`;
   }).join('');
+
+  updateUploadSelectionCount();
 }
 
 /* Commit the upload */
 function confirmUpload() {
   if (!pendingUpload) return;
-  const overwrite = document.getElementById('chkOverwrite').checked;
-  const allActual = getAllActualMonths();
+
+  // Collect only checked months
+  const checkedMonths = new Set(
+    Array.from(document.querySelectorAll('.month-import-cb:checked')).map(b => b.dataset.month)
+  );
+
   let imported = 0, skipped = 0;
 
   Object.entries(pendingUpload).forEach(([m, vals]) => {
-    const exists = RAW[m] || UPLOADED[m];
-    if (exists && !overwrite) { skipped++; return; }
-    if (RAW[m]) {
-      // Month is in RAW — store as override so it takes priority
-      if (!OVERRIDES[m]) OVERRIDES[m] = {};
-      ALL_STATES.forEach(s => { OVERRIDES[m][s] = vals[s] || 0; });
-    } else {
-      // New month — add to UPLOADED
+    if (!checkedMonths.has(m)) { skipped++; return; }
+
+    // Finalize the month — shows as locked actual with no yellow highlights
+    if (!FINALIZED[m]) FINALIZED[m] = {};
+    ALL_STATES.forEach(s => { FINALIZED[m][s] = vals[s] || 0; });
+
+    // For non-RAW months, also store in UPLOADED so getAllActualMonths() finds them
+    if (!RAW[m]) {
       UPLOADED[m] = {};
       ALL_STATES.forEach(s => { UPLOADED[m][s] = vals[s] || 0; });
     }
+
+    // Clear any stale overrides so old data doesn't conflict
+    if (OVERRIDES[m]) delete OVERRIDES[m];
+
+    // Mark as upload-finalized so Revert button is hidden
+    if (!UPLOAD_FINALIZED.includes(m)) UPLOAD_FINALIZED.push(m);
+
     imported++;
   });
 
-  localStorage.setItem(LS_OVERRIDES, JSON.stringify(OVERRIDES));
-  localStorage.setItem(LS_UPLOADED,  JSON.stringify(UPLOADED));
+  localStorage.setItem(LS_FINALIZED,        JSON.stringify(FINALIZED));
+  localStorage.setItem(LS_OVERRIDES,        JSON.stringify(OVERRIDES));
+  localStorage.setItem(LS_UPLOADED,         JSON.stringify(UPLOADED));
+  localStorage.setItem(LS_UPLOAD_FINALIZED, JSON.stringify(UPLOAD_FINALIZED));
   updateEditBadge();
   closeUploadModal();
   render();
-  toast(`✓ Imported ${imported} month${imported!==1?'s':''}${skipped>0?`, ${skipped} skipped`:''}.`);
+  toast(`✓ Imported & finalized ${imported} month${imported!==1?'s':''}${skipped>0?`, ${skipped} skipped`:''}.`);
 }
 
 /* ── Wire up modal buttons + Escape key ── */
