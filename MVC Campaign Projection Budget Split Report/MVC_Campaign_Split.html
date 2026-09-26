@@ -103,6 +103,19 @@
   tr:hover td { background: rgba(255,255,255,0.02); }
   .tfoot-row td { background: var(--surface2); font-weight: 700; color: var(--accent2); border-top: 1px solid var(--border); }
 
+  .vol-input {
+    background: transparent; border: 1px solid transparent; color: var(--text);
+    font-family: 'DM Mono', monospace; font-size: 12px; text-align: right;
+    width: 76px; padding: 2px 4px; border-radius: 4px; outline: none;
+  }
+  .vol-input:hover, .vol-input:focus { border-color: var(--border); background: var(--surface2); }
+  .vol-input.overridden { border-color: var(--accent3); background: rgba(255,107,74,0.08); color: var(--accent3); }
+  .clear-override-btn {
+    background: transparent; border: none; color: var(--accent3); cursor: pointer;
+    font-size: 12px; line-height: 1; padding: 2px; border-radius: 3px;
+  }
+  .clear-override-btn:hover { background: rgba(255,107,74,0.15); }
+
   .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
   .badge-eng { background: rgba(61,127,255,0.15); color: #3d7fff; border: 1px solid rgba(61,127,255,0.3); }
   .badge-spa { background: rgba(0,229,195,0.12); color: #00e5c3; border: 1px solid rgba(0,229,195,0.25); }
@@ -213,7 +226,10 @@
   <div id="results-panel">
     <div class="results-header" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
       <div class="results-title" style="margin-bottom:0;">Volume & Spend by Campaign</div>
-      <button class="dl-btn" onclick="downloadCSV()" style="background: transparent; border: 1px solid var(--accent2); color: var(--accent2); padding: 8px 16px; border-radius: 6px; font-family: 'DM Mono', monospace; font-size: 11px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='var(--accent2)';this.style.color='#0a0d14'" onmouseout="this.style.background='transparent';this.style.color='var(--accent2)'">↓ Download CSV</button>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="dl-btn" onclick="clearAllVolumeOverrides()" style="background: transparent; border: 1px solid var(--accent3); color: var(--accent3); padding: 8px 16px; border-radius: 6px; font-family: 'DM Mono', monospace; font-size: 11px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='var(--accent3)';this.style.color='#0a0d14'" onmouseout="this.style.background='transparent';this.style.color='var(--accent3)'">↺ Clear Overrides</button>
+        <button class="dl-btn" onclick="downloadCSV()" style="background: transparent; border: 1px solid var(--accent2); color: var(--accent2); padding: 8px 16px; border-radius: 6px; font-family: 'DM Mono', monospace; font-size: 11px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='var(--accent2)';this.style.color='#0a0d14'" onmouseout="this.style.background='transparent';this.style.color='var(--accent2)'">↓ Download CSV</button>
+      </div>
     </div>
     <div class="table-wrap">
       <div class="table-scroll">
@@ -283,6 +299,45 @@ function saveLicenseSelection() {
 }
 
 let parsedRows = [];
+
+// ── Manual Volume / Volume (Proj Total) overrides ──────────
+const OVERRIDES_KEY = 'mvc_volume_overrides_v1';
+
+function loadVolumeOverrides() {
+  try {
+    const raw = localStorage.getItem(OVERRIDES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) { return {}; }
+}
+
+function saveVolumeOverrides(overrides) {
+  try { localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides)); } catch (e) { /* ignore */ }
+}
+
+function setVolumeOverride(key, field, rawValue) {
+  const n = Number(String(rawValue).replace(/,/g, ''));
+  const overrides = loadVolumeOverrides();
+  if (!isFinite(n)) return; // ignore invalid input, leave prior state untouched
+  if (!overrides[key]) overrides[key] = {};
+  overrides[key][field] = Math.round(n);
+  saveVolumeOverrides(overrides);
+  calc();
+}
+
+function clearVolumeOverride(key, field) {
+  const overrides = loadVolumeOverrides();
+  if (overrides[key]) {
+    delete overrides[key][field];
+    if (Object.keys(overrides[key]).length === 0) delete overrides[key];
+  }
+  saveVolumeOverrides(overrides);
+  calc();
+}
+
+function clearAllVolumeOverrides() {
+  saveVolumeOverrides({});
+  calc();
+}
 
 // ── Drag & Drop / Click ───────────────────────────────────
 const dropArea = document.getElementById('drop-area');
@@ -429,11 +484,55 @@ function apportionLargestRemainder(values, total) {
   return result;
 }
 
+// Cap each campaign's Sends so Volume/Send never falls below the selected
+// Tier's minimum. Mathematically, Volume/Send_i = Tier_i * (grandTotal /
+// totalWeight), where totalWeight = sum(Tier_i * Sends_i) across all 4
+// campaigns — so Volume/Send_i >= Tier_i for every campaign at once,
+// exactly when totalWeight <= grandTotal. When it's over, Sends are
+// reduced (largest weight first) until it fits. Returns the list of
+// campaign keys whose Sends were reduced, and whether it still couldn't
+// fit even with every campaign at 1 Send.
+function autoCapSends(grandTotal) {
+  const state = CAMPAIGNS.map(c => {
+    const numSel = document.getElementById('num-' + c.key);
+    return {
+      key: c.key,
+      tier: Number(document.getElementById('tier-' + c.key).value),
+      num: Number(numSel.value),
+      numSel
+    };
+  });
+
+  let totalWeight = state.reduce((s, c) => s + c.tier * c.num, 0);
+  const adjusted = new Set();
+  let guard = 0;
+  while (totalWeight > grandTotal && guard < 10000) {
+    guard++;
+    let candidate = null;
+    state.forEach(c => {
+      if (c.num > 1 && (!candidate || c.tier * c.num > candidate.tier * candidate.num)) candidate = c;
+    });
+    if (!candidate) break; // every campaign is already at 1 Send; can't reduce further
+    candidate.num -= 1;
+    totalWeight -= candidate.tier;
+    adjusted.add(candidate.key);
+  }
+
+  state.forEach(c => {
+    if (Number(c.numSel.value) !== c.num) c.numSel.value = c.num;
+  });
+
+  return { adjusted: Array.from(adjusted), stillOver: totalWeight > grandTotal };
+}
+
 // ── Core calculation ──────────────────────────────────────
 function calc() {
   saveSettings();
   const grandTotal = getGrandTotal();
   document.getElementById('grand-total-val').textContent = fmtN(grandTotal);
+
+  const capResult = autoCapSends(grandTotal);
+  if (capResult.adjusted.length) saveSettings();
 
   // raw weight per campaign = tier (per-send volume) * number of sends
   const raws = CAMPAIGNS.map(c => {
@@ -464,24 +563,54 @@ function calc() {
   const csvVolumes = apportionLargestRemainder(results.map(r => r.rawVolume), grandTotal);
   results.forEach((r, i) => { r.csvVolume = csvVolumes[i]; });
 
-  renderResults(results, grandTotal);
+  // Apply any manual Volume / Volume (Proj Total) overrides. Spend is
+  // recalculated from the effective (possibly overridden) Volume.
+  const overrides = loadVolumeOverrides();
+  results.forEach(r => {
+    const o = overrides[r.key];
+    r.volumeOverridden = false;
+    r.csvVolumeOverridden = false;
+    if (o && typeof o.volume === 'number') {
+      r.volume = o.volume;
+      r.volumeOverridden = true;
+    }
+    if (o && typeof o.csvVolume === 'number') {
+      r.csvVolume = o.csvVolume;
+      r.csvVolumeOverridden = true;
+    }
+    r.spend = r.volume * r.ppp;
+  });
+
+  renderResults(results, grandTotal, capResult);
 }
 
-function renderResults(results, grandTotal) {
+function renderResults(results, grandTotal, capResult) {
   lastResults = results;
   lastGrandTotal = grandTotal;
   lastMonth = document.getElementById('month-select').value;
   document.getElementById('results-panel').style.display = 'block';
+
+  const adjustedKeys = (capResult && capResult.adjusted) || [];
 
   document.getElementById('result-body').innerHTML = results.map(r => `
     <tr>
       <td><span class="badge ${r.badge}">${r.label}</span></td>
       <td class="num">${r.tier.toLocaleString()}</td>
       <td class="num">${r.freq === 'daily' ? 'Daily' : 'Weekly'}</td>
-      <td class="num">${r.num}</td>
+      <td class="num" ${adjustedKeys.includes(r.key) ? `title="Sends was automatically reduced to keep Volume / Send at or above the Tier minimum." style="color: var(--accent3);"` : ''}>${r.num}${adjustedKeys.includes(r.key) ? ' *' : ''}</td>
       <td class="num" title="Unrounded: ${fmt2(r.rawVolume / r.num)}">${r.volPerSend.toLocaleString()}</td>
-      <td class="num" title="Unrounded: ${fmt2(r.rawVolume)}">${fmt0(r.volume)}</td>
-      <td class="num" title="Unrounded: ${fmt2(r.rawVolume)}">${r.csvVolume.toLocaleString()}</td>
+      <td class="num">
+        <input type="text" inputmode="numeric" class="vol-input${r.volumeOverridden ? ' overridden' : ''}"
+          value="${fmt0(r.volume)}"
+          title="${r.volumeOverridden ? 'Manually overridden — calculated value: ' + fmt2(r.rawVolume) : 'Click to override. Calculated (unrounded): ' + fmt2(r.rawVolume)}"
+          onchange="setVolumeOverride('${r.key}','volume', this.value)">${r.volumeOverridden ? `<button type="button" class="clear-override-btn" title="Reset to calculated value" onclick="clearVolumeOverride('${r.key}','volume')">↺</button>` : ''}
+      </td>
+      <td class="num">
+        <input type="text" inputmode="numeric" class="vol-input${r.csvVolumeOverridden ? ' overridden' : ''}"
+          value="${r.csvVolume.toLocaleString()}"
+          title="${r.csvVolumeOverridden ? 'Manually overridden — calculated value: ' + fmt2(r.rawVolume) : 'Click to override. Calculated (unrounded): ' + fmt2(r.rawVolume)}"
+          onchange="setVolumeOverride('${r.key}','csvVolume', this.value)">${r.csvVolumeOverridden ? `<button type="button" class="clear-override-btn" title="Reset to calculated value" onclick="clearVolumeOverride('${r.key}','csvVolume')">↺</button>` : ''}
+      </td>
       <td class="num">${fmt$(r.ppp)}</td>
       <td class="num">${fmt$$(r.spend)}</td>
     </tr>
@@ -512,7 +641,16 @@ function renderResults(results, grandTotal) {
 
   const noteEl = document.getElementById('result-note');
   if (noteEl) {
-    noteEl.textContent = 'Volume and Volume / Send are each rounded independently to whole numbers, so Sends × Volume / Send will not always equal Volume exactly. Spend is calculated directly from Volume. Volume (Proj Total) is shown for reference only, apportioned so the 4 campaigns always add up to the CSV\'s exact monthly total (hover a cell to see the unrounded value).';
+    const baseNote = 'Volume and Volume / Send are each rounded independently to whole numbers, so Sends × Volume / Send will not always equal Volume exactly. Spend is calculated directly from Volume. Volume (Proj Total) is shown for reference only, apportioned so the 4 campaigns always add up to the CSV\'s exact monthly total (hover a cell to see the unrounded value). Sends is automatically capped per campaign so Volume / Send never falls below the selected Tier\'s minimum (marked with *). Volume and Volume (Proj Total) are editable — click a cell to type your own number; Spend recalculates from it, and an orange ↺ appears to reset it back to the calculated value.';
+    let html = `<div>${baseNote}</div>`;
+    if (capResult && capResult.adjusted.length) {
+      const names = capResult.adjusted.map(key => CAMPAIGNS.find(c => c.key === key).label).join(', ');
+      html += `<div style="color: var(--accent3); margin-top:6px;">Sends was reduced for: ${names} — this month\'s total volume couldn\'t support the originally selected Sends at their Tier minimums.</div>`;
+    }
+    if (capResult && capResult.stillOver) {
+      html += `<div style="color: var(--accent3); margin-top:6px;">Even at 1 Send per campaign, this month\'s total volume is too low to meet every selected Tier\'s minimum. Consider a lower Tier for one or more campaigns.</div>`;
+    }
+    noteEl.innerHTML = html;
   }
 }
 
