@@ -13,7 +13,7 @@ Responses should be:
 ## Project Overview
 This project maintains and improves a single-file interactive HTML app (`index.html`) that tracks historical direct mail volumes and generates monthly projections by state for Metro Vein Centers retargeting campaigns.
 
-**Primary data source:** `mailed_by_state` CSV (columns: Campaign, Mailed, CT, MI, NJ, NY, TX, AZ, PA, IL, Total)
+**Primary data source:** `mailed_by_state` CSV (columns: Campaign, Mailed, CT, MI, NJ, NY, TX, AZ, PA, IL, GA, Total)
 
 **Live deployment:**
 - GitHub: https://github.com/francisopakunle-lab/mvc-monthly-retargeting-projections
@@ -25,7 +25,7 @@ This project maintains and improves a single-file interactive HTML app (`index.h
 ## App Architecture
 Single self-contained HTML file — vanilla JS, no framework, no build step.
 
-**States tracked:** CT, MI, NJ, NY, TX, AZ, PA, IL
+**States tracked:** CT, MI, NJ, NY, TX, AZ, PA, IL, GA
 
 **Data stores (localStorage):**
 - `RAW` — hardcoded historical actuals in the HTML (source of truth)
@@ -35,7 +35,7 @@ Single self-contained HTML file — vanilla JS, no framework, no build step.
 
 **Priority chain:** FINALIZED > OVERRIDES > RAW > UPLOADED
 
-**RAW data coverage:** 2022-09 through 2026-07
+**RAW data coverage:** 2022-09 through 2026-09
 
 ---
 
